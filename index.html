@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AniLog — Your Manga-Style Anime Journal</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════
+       SITE HEADER / NAVIGATION
+  ═══════════════════════════════════════════════ -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-bracket">[</span>
+        <span class="logo-text">ANI<strong>LOG</strong></span>
+        <span class="logo-bracket">]</span>
+      </div>
+      <nav class="main-nav" id="main-nav">
+        <a href="#dashboard"  class="nav-link active" data-section="dashboard">Dashboard</a>
+        <a href="#library"    class="nav-link"         data-section="library">My Library</a>
+        <a href="#details"    class="nav-link"         data-section="details">Anime Details</a>
+        <a href="#journal"    class="nav-link"         data-section="journal">My Journal</a>
+      </nav>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════
+       MODAL — Add / Edit Anime
+       Shown/hidden via .modal-open on <body>
+  ═══════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Add Anime</h2>
+        <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
+      </div>
+
+      <!-- Form — id lets app.js reference it directly -->
+      <form class="modal-form" id="anime-form" novalidate>
+
+        <!-- Hidden field: stores the anime id when editing -->
+        <input type="hidden" id="form-id" />
+
+        <div class="form-group">
+          <label class="form-label" for="form-title">Title <span class="form-required">*</span></label>
+          <input class="form-input" type="text" id="form-title" placeholder="e.g. Vinland Saga" required />
+          <span class="form-error" id="error-title"></span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="form-poster">Poster URL <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="url" id="form-poster" placeholder="https://..." />
+          <span class="form-error" id="error-poster"></span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="form-episodes">Total Episodes <span class="form-required">*</span></label>
+            <input class="form-input" type="number" id="form-episodes" min="1" max="9999" placeholder="24" required />
+            <span class="form-error" id="error-episodes"></span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="form-watched">Watched Episodes</label>
+            <input class="form-input" type="number" id="form-watched" min="0" max="9999" placeholder="0" />
+            <span class="form-error" id="error-watched"></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="form-status">Status <span class="form-required">*</span></label>
+          <select class="form-input form-select" id="form-status" required>
+            <option value="">— Select status —</option>
+            <option value="watching">Watching</option>
+            <option value="completed">Completed</option>
+            <option value="plan">Plan to Watch</option>
+            <option value="dropped">Dropped</option>
+          </select>
+          <span class="form-error" id="error-status"></span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="form-genre">Genre <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="text" id="form-genre" placeholder="e.g. Drama, Action" />
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="form-cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="form-submit">Save Anime</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MODAL — Confirm Delete
+  ═══════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="modal-panel modal-panel--sm">
+      <div class="modal-header">
+        <h2 class="modal-title" id="confirm-title">Delete Anime</h2>
+        <button class="modal-close" id="confirm-close" aria-label="Close">✕</button>
+      </div>
+      <p class="confirm-message">Remove <strong id="confirm-anime-name"></strong> from your library? This cannot be undone.</p>
+      <div class="form-actions">
+        <button class="btn-secondary" id="confirm-cancel">Cancel</button>
+        <button class="btn-primary" id="confirm-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MAIN CONTENT WRAPPER
+  ═══════════════════════════════════════════════ -->
+  <main class="app-main">
+
+    <!-- ─────────────────────────────────────────
+         SECTION 1 · DASHBOARD
+    ───────────────────────────────────────── -->
+    <section class="app-section active" id="dashboard">
+
+      <!-- Hero / Welcome (static — not driven by data) -->
+      <div class="dashboard-hero">
+        <div class="hero-text">
+          <p class="hero-label">// PERSONAL ANIME TRACKER</p>
+          <h1 class="hero-title">
+            Your Story,<br />
+            <span class="hero-title-alt">Your Log.</span>
+          </h1>
+          <p class="hero-sub">Track every episode. Rate every arc. Write every feeling.</p>
+          <button class="btn-primary" id="hero-add-btn">+ Add Anime</button>
+        </div>
+        <div class="hero-illustration" aria-hidden="true">
+          <div class="speed-lines"></div>
+          <div class="hero-manga-panel">
+            <div class="manga-panel-inner">
+              <div class="manga-eye"></div>
+              <div class="manga-eye"></div>
+            </div>
+            <div class="manga-panel-caption">始まり — IT BEGINS</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Row — numbers rendered by JS -->
+      <div class="stats-strip">
+        <div class="stat-block">
+          <span class="stat-number" id="stat-total">0</span>
+          <span class="stat-label">Total Anime</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-block">
+          <span class="stat-number" id="stat-episodes">0</span>
+          <span class="stat-label">Episodes Watched</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-block">
+          <span class="stat-number" id="stat-completed">0</span>
+          <span class="stat-label">Completed</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-block">
+          <span class="stat-number" id="stat-watching">0</span>
+          <span class="stat-label">Watching</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-block">
+          <span class="stat-number" id="stat-plan">0</span>
+          <span class="stat-label">Plan to Watch</span>
+        </div>
+      </div>
+
+      <!-- Currently Watching + Recently Completed — rendered by JS -->
+      <div class="dashboard-grid">
+        <div class="panel panel--wide">
+          <h2 class="panel-title"><span class="panel-num">01</span> Currently Watching</h2>
+          <div class="watching-list" id="dashboard-watching"></div>
+        </div>
+        <div class="panel panel--narrow">
+          <h2 class="panel-title"><span class="panel-num">02</span> Recently Completed</h2>
+          <div class="completed-list" id="dashboard-completed"></div>
+          <div class="quick-nav">
+            <button class="btn-primary btn-block" data-nav="library">Browse Library</button>
+            <button class="btn-secondary btn-block" data-nav="journal">Open Journal</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         SECTION 2 · MY LIBRARY
+    ───────────────────────────────────────── -->
+    <section class="app-section" id="library">
+
+      <div class="section-header">
+        <div>
+          <p class="section-label">// COLLECTION</p>
+          <h2 class="section-title">My Library</h2>
+        </div>
+        <button class="btn-primary" id="library-add-btn">+ Add Anime</button>
+      </div>
+
+      <!-- Search & Filter Bar -->
+      <div class="filter-bar">
+        <div class="search-box">
+          <span class="search-icon">◎</span>
+          <input type="text" class="search-input" id="search-input" placeholder="Search anime..." aria-label="Search anime" />
+        </div>
+        <div class="filter-group">
+          <select class="filter-select" id="status-filter" aria-label="Filter by status">
+            <option value="all">All Status</option>
+            <option value="watching">Watching</option>
+            <option value="completed">Completed</option>
+            <option value="plan">Plan to Watch</option>
+            <option value="dropped">Dropped</option>
+          </select>
+          <select class="filter-select" id="sort-select" aria-label="Sort by">
+            <option value="added">Date Added</option>
+            <option value="title">Title A–Z</option>
+            <option value="rating">Rating</option>
+            <option value="progress">Progress</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Status Tabs — counts updated by JS -->
+      <div class="status-tabs">
+        <button class="tab-btn active" data-tab="all">All <span class="tab-count" id="count-all">0</span></button>
+        <button class="tab-btn" data-tab="watching">Watching <span class="tab-count" id="count-watching">0</span></button>
+        <button class="tab-btn" data-tab="completed">Completed <span class="tab-count" id="count-completed">0</span></button>
+        <button class="tab-btn" data-tab="plan">Plan to Watch <span class="tab-count" id="count-plan">0</span></button>
+        <button class="tab-btn" data-tab="dropped">Dropped <span class="tab-count" id="count-dropped">0</span></button>
+      </div>
+
+      <!-- Anime Grid — rendered by JS -->
+      <div class="anime-grid" id="anime-grid"></div>
+
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         SECTION 3 · ANIME DETAILS
+    ───────────────────────────────────────── -->
+    <section class="app-section" id="details">
+
+      <button class="btn-back" data-nav="library">← Back to Library</button>
+
+      <!-- Rendered by JS when a card is clicked -->
+      <div id="details-content"></div>
+
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         SECTION 4 · MY JOURNAL
+    ───────────────────────────────────────── -->
+    <section class="app-section" id="journal">
+
+      <div class="section-header">
+        <div>
+          <p class="section-label">// REFLECTIONS</p>
+          <h2 class="section-title">My Journal</h2>
+        </div>
+        <!-- Journal entries are written from the Details section -->
+      </div>
+
+      <div class="journal-layout">
+        <aside class="journal-toc">
+          <h3 class="toc-title">— Entries —</h3>
+          <ul class="toc-list" id="journal-toc-list"></ul>
+        </aside>
+        <div class="journal-feed" id="journal-feed"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ═══════════════════════════════════════════════
+       SITE FOOTER
+  ═══════════════════════════════════════════════ -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span class="footer-logo">[ ANILOG ]</span>
+      <span class="footer-tagline">Your story, your log. — 物語は続く</span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
