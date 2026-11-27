@@ -624,6 +624,24 @@ h3 {
   flex-shrink: 0;
   background-image: radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px);
   background-size: 4px 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Real poster image inside the completed mini slot */
+.completed-poster-mini .poster-img,
+.completed-poster-mini .completed-poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Placeholder inside completed mini slot */
+.completed-poster-mini .poster-placeholder {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 
 .completed-title {

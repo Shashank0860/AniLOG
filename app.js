@@ -48,8 +48,12 @@ function sanitizeQuotes(rawQuotes) {
       var epRaw = q.episode;
       var ep = null;
       if (epRaw !== null && epRaw !== undefined && epRaw !== '') {
-        var parsedEp = parseInt(epRaw, 10);
-        if (!isNaN(parsedEp) && parsedEp >= 1) ep = parsedEp;
+        // Only accept positive whole numbers
+        var epStr = String(epRaw);
+        if (/^\d+$/.test(epStr)) {
+          var parsedEp = parseInt(epStr, 10);
+          if (parsedEp >= 1 && parsedEp <= 9999) ep = parsedEp;
+        }
       }
       return {
         id:        String(q.id || generateId()),
@@ -469,7 +473,7 @@ function renderDashboardCompleted() {
     return (
       '<div class="completed-item" data-id="' + anime.id + '" style="cursor:pointer">' +
         '<div class="completed-poster-mini">' +
-          '<span class="poster-kanji-sm">' + escapeHtml(anime.title.charAt(0)) + '</span>' +
+          buildPosterHtml(anime, 'completed-poster-img') +
         '</div>' +
         '<div class="completed-info">' +
           '<p class="completed-title">' + escapeHtml(anime.title) + '</p>' +
@@ -1510,13 +1514,20 @@ function wireDetailsEvents(animeId) {
       }
 
       if (rawEp !== '') {
-        var parsedEp = parseInt(rawEp, 10);
-        if (isNaN(parsedEp) || parsedEp < 1 || parsedEp > 9999) {
-          errEp.textContent = 'Episode must be between 1 and 9999.';
+        // Strict: accept only positive whole numbers 1–9999 (reject 12.5, 12abc, etc.)
+        if (!/^\d+$/.test(rawEp)) {
+          errEp.textContent = 'Episode must be a whole number (1–9999).';
           epEl.classList.add('input-error');
           valid = false;
         } else {
-          episode = parsedEp;
+          var parsedEp = parseInt(rawEp, 10);
+          if (parsedEp < 1 || parsedEp > 9999) {
+            errEp.textContent = 'Episode must be between 1 and 9999.';
+            epEl.classList.add('input-error');
+            valid = false;
+          } else {
+            episode = parsedEp;
+          }
         }
       }
 

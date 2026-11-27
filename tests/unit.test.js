@@ -53,8 +53,12 @@ function sanitizeQuotes(rawQuotes) {
       var epRaw = q.episode;
       var ep = null;
       if (epRaw !== null && epRaw !== undefined && epRaw !== '') {
-        var parsedEp = parseInt(epRaw, 10);
-        if (!isNaN(parsedEp) && parsedEp >= 1) ep = parsedEp;
+        // Only accept positive whole numbers (matches app.js strict validation)
+        var epStr = String(epRaw);
+        if (/^\d+$/.test(epStr)) {
+          var parsedEp = parseInt(epStr, 10);
+          if (parsedEp >= 1 && parsedEp <= 9999) ep = parsedEp;
+        }
       }
       return {
         id:        String(q.id || generateId()),
@@ -421,6 +425,50 @@ describe('Quotes migration & sanitization', function() {
   assert(sanitized[0].text === 'Believe it!' && sanitized[0].speaker === 'Naruto' && sanitized[0].episode === 12, 'trims text/speaker and parses episode');
   assert(sanitized[1].episode === null, 'preserves null episode');
   assert(sanitized[2].episode === null, 'rejects negative episode');
+});
+
+describe('Strict quote episode validation', function() {
+  // Decimal values must be rejected
+  var d1 = sanitizeQuotes([{ id: 'se1', text: 'Decimal ep', episode: '12.5' }]);
+  assert(d1[0].episode === null, 'rejects decimal string "12.5"');
+
+  var d2 = sanitizeQuotes([{ id: 'se2', text: 'Decimal ep', episode: 12.5 }]);
+  assert(d2[0].episode === null, 'rejects numeric decimal 12.5');
+
+  // Partial numeric values must be rejected
+  var d3 = sanitizeQuotes([{ id: 'se3', text: 'Partial', episode: '12abc' }]);
+  assert(d3[0].episode === null, 'rejects partial numeric "12abc"');
+
+  var d4 = sanitizeQuotes([{ id: 'se4', text: 'Alpha prefix', episode: 'abc12' }]);
+  assert(d4[0].episode === null, 'rejects alpha-prefixed "abc12"');
+
+  // Boundary values
+  var d5 = sanitizeQuotes([{ id: 'se5', text: 'Zero ep', episode: '0' }]);
+  assert(d5[0].episode === null, 'rejects episode 0 (below minimum)');
+
+  var d6 = sanitizeQuotes([{ id: 'se6', text: 'Too high', episode: '10000' }]);
+  assert(d6[0].episode === null, 'rejects episode 10000 (exceeds 9999)');
+
+  var d7 = sanitizeQuotes([{ id: 'se7', text: 'Max valid', episode: '9999' }]);
+  assert(d7[0].episode === 9999, 'accepts episode 9999 (upper bound)');
+
+  var d8 = sanitizeQuotes([{ id: 'se8', text: 'Min valid', episode: '1' }]);
+  assert(d8[0].episode === 1, 'accepts episode 1 (lower bound)');
+
+  // Valid numeric input (not string)
+  var d9 = sanitizeQuotes([{ id: 'se9', text: 'Numeric 12', episode: 12 }]);
+  assert(d9[0].episode === 12, 'accepts numeric integer 12');
+
+  // Negative values
+  var d10 = sanitizeQuotes([{ id: 'se10', text: 'Negative', episode: '-3' }]);
+  assert(d10[0].episode === null, 'rejects negative string "-3"');
+
+  var d11 = sanitizeQuotes([{ id: 'se11', text: 'Negative num', episode: -3 }]);
+  assert(d11[0].episode === null, 'rejects negative number -3');
+
+  // Whitespace and special
+  var d12 = sanitizeQuotes([{ id: 'se12', text: 'Space', episode: ' 12 ' }]);
+  assert(d12[0].episode === null, 'rejects episode with spaces " 12 "');
 });
 
 describe('Journal filtering logic', function() {
