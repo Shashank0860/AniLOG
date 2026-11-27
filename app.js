@@ -63,7 +63,8 @@ function storageLoad() {
           rating:     rating,
           review:     typeof item.review === 'string' ? item.review : '',
           notes:      typeof item.notes === 'string' ? item.notes : '',
-          addedAt:    typeof item.addedAt === 'number' ? item.addedAt : Date.now()
+          addedAt:    typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
+          updatedAt:  typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now())
         };
       });
   } catch (e) {
@@ -436,11 +437,12 @@ function renderDetails(anime) {
   var pct    = calcProgress(anime);
   var rating = anime.rating || 0;
 
-  // Build 10 clickable star spans
+  // Build 10 clickable & keyboard-accessible star spans
   var starsHtml = '';
   for (var i = 1; i <= 10; i++) {
     var filled = i <= rating ? '★' : '☆';
-    starsHtml += '<span class="rating-star" data-star="' + i + '" role="button" tabindex="0" aria-label="Rate ' + i + '">' + filled + '</span>';
+    var isCurrent = i === rating ? 'true' : 'false';
+    starsHtml += '<span class="rating-star" data-star="' + i + '" role="button" tabindex="0" aria-pressed="' + isCurrent + '" aria-label="Rate ' + i + ' out of 10">' + filled + '</span>';
   }
 
   var html = (
@@ -537,8 +539,10 @@ function renderJournal() {
     return;
   }
 
-  // Sort by most recently added/edited (addedAt as proxy)
-  entries.sort(function(a, b) { return b.addedAt - a.addedAt; });
+  // Sort by latest review modification date (fallback to addedAt for older entries)
+  entries.sort(function(a, b) {
+    return (b.updatedAt || b.addedAt) - (a.updatedAt || a.addedAt);
+  });
 
   tocList.innerHTML = entries.map(function(anime, idx) {
     var num = String(idx + 1).padStart(2, '0');
@@ -553,6 +557,7 @@ function renderJournal() {
     var num   = String(idx + 1).padStart(2, '0');
     var stars = buildStarSummary(anime.rating);
     var statusText = anime.status === 'completed' ? '✓ Completed' : '📺 Still Watching';
+    var entryDate  = anime.updatedAt || anime.addedAt;
 
     return (
       '<article class="journal-entry" id="journal-entry-' + anime.id + '">' +
@@ -561,7 +566,7 @@ function renderJournal() {
             '<span class="journal-num">[ ' + num + ' ]</span>' +
             '<div>' +
               '<h3 class="journal-entry-title">' + escapeHtml(anime.title) + '</h3>' +
-              '<span class="journal-date">' + formatDate(anime.addedAt) + '</span>' +
+              '<span class="journal-date">' + formatDate(entryDate) + '</span>' +
             '</div>' +
           '</div>' +
           '<div class="journal-rating">' + stars + '</div>' +
@@ -592,12 +597,28 @@ function renderJournal() {
 
 /* ── 5.1 Navigation ── */
 
+var VALID_SECTIONS = ['dashboard', 'library', 'details', 'journal'];
+
 /**
  * Shows the requested section and hides all others.
- * Updates the active nav link.
+ * Updates the active nav link and synchronizes the URL hash.
  * @param {string} sectionId
+ * @param {boolean} [updateHash=true]
  */
-function navigateTo(sectionId) {
+function navigateTo(sectionId, updateHash) {
+  if (VALID_SECTIONS.indexOf(sectionId) === -1) {
+    sectionId = 'dashboard';
+  }
+
+  // Ensure #details has a helpful message if opened directly with no anime selected
+  if (sectionId === 'details' && !state.currentAnimeId) {
+    document.getElementById('details-content').innerHTML =
+      '<div class="empty-state">' +
+        '<p>No anime selected.<br><em>Choose an anime from your library to view its details.</em></p>' +
+        '<button class="btn-primary btn-sm" data-nav="library">Browse Library</button>' +
+      '</div>';
+  }
+
   document.querySelectorAll('.app-section').forEach(function(s) { s.classList.remove('active'); });
   var target = document.getElementById(sectionId);
   if (target) target.classList.add('active');
@@ -606,9 +627,29 @@ function navigateTo(sectionId) {
     link.classList.toggle('active', link.dataset.section === sectionId);
   });
 
+  if (updateHash !== false && window.location.hash !== '#' + sectionId) {
+    window.location.hash = '#' + sectionId;
+  }
+
   document.getElementById('main-nav').classList.remove('open');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+/**
+ * Reads the current URL hash and activates the matching section.
+ * On initial load with no hash, sets #dashboard.
+ */
+function syncFromHash() {
+  var hash = window.location.hash.replace('#', '').trim();
+  if (!hash) {
+    navigateTo('dashboard', true);
+    return;
+  }
+  var targetSection = VALID_SECTIONS.indexOf(hash) !== -1 ? hash : 'dashboard';
+  navigateTo(targetSection, false);
+}
+
+window.addEventListener('hashchange', syncFromHash);
 
 // Nav link clicks
 document.querySelectorAll('.nav-link').forEach(function(link) {
@@ -729,8 +770,20 @@ function validateForm() {
     valid = false;
   }
 
+  // Enforce consistency between episode progress and manually selected status
+  if (status === 'plan' && !isNaN(watched) && watched > 0) {
+    showFieldError('form-watched', 'error-watched', 'Plan to Watch entries must have 0 watched episodes.');
+    valid = false;
+  } else if (status === 'completed' && !isNaN(episodes) && !isNaN(watched) && watched < episodes) {
+    showFieldError('form-watched', 'error-watched', 'Completed anime must have all ' + episodes + ' episodes watched.');
+    valid = false;
+  } else if (status === 'watching' && !isNaN(episodes) && !isNaN(watched) && watched === episodes) {
+    showFieldError('form-status', 'error-status', 'All episodes watched — select Completed instead.');
+    valid = false;
+  }
+
   if (poster && !isValidUrl(poster)) {
-    showFieldError('form-poster', 'error-poster', 'Enter a valid http(s) URL or leave blank.');
+    showFieldError('form-poster', 'error-poster', 'Enter a valid http:// or https:// URL or leave blank.');
     valid = false;
   }
 
@@ -742,9 +795,14 @@ function showFieldError(inputId, errorId, message) {
   document.getElementById(errorId).textContent = message;
 }
 
-/** Basic URL check — must start with http:// or https:// */
+/** Validates poster URL using the URL constructor; allows only HTTP and HTTPS. */
 function isValidUrl(str) {
-  return /^https?:\/\/.+/.test(str);
+  try {
+    var parsed = new URL(str);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
 }
 
 // Hero "+ Add Anime" button
@@ -775,13 +833,8 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
   var status   = document.getElementById('form-status').value;
   var genre    = document.getElementById('form-genre').value.trim();
 
-  // Clamp watched to totalEps
+  // Clamp watched to totalEps (status consistency is already validated by validateForm)
   watched = Math.min(watched, totalEps);
-
-  // Auto-complete when watched == total
-  if (watched === totalEps && status === 'watching') {
-    status = 'completed';
-  }
 
   if (id) {
     // EDIT — update existing entry
@@ -796,6 +849,7 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
     }
   } else {
     // ADD — create new entry
+    var now = Date.now();
     state.library.push({
       id:         generateId(),
       title:      title,
@@ -807,7 +861,8 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
       rating:     0,
       review:     '',
       notes:      '',
-      addedAt:    Date.now()
+      addedAt:    now,
+      updatedAt:  now
     });
   }
 
@@ -974,34 +1029,72 @@ function wireDetailsEvents(animeId) {
     decrementEpisode(animeId);
   });
 
-  // Save review
+  // Save review (query freshly rendered button after stateCommit)
   document.getElementById('detail-save-review').addEventListener('click', function() {
     var anime = findAnimeById(animeId);
     if (!anime) return;
-    anime.review = document.getElementById('detail-review').value;
+    anime.review    = document.getElementById('detail-review').value;
+    anime.updatedAt = Date.now();
     stateCommit();
-    flashSaved(this, 'Saved!');
+    var freshBtn = document.getElementById('detail-save-review');
+    if (freshBtn) flashSaved(freshBtn, 'Saved!');
   });
 
-  // Save notes
+  // Save notes (query freshly rendered button after stateCommit)
   document.getElementById('detail-save-notes').addEventListener('click', function() {
     var anime = findAnimeById(animeId);
     if (!anime) return;
     anime.notes = document.getElementById('detail-notes').value;
     stateCommit();
-    flashSaved(this, 'Saved!');
+    var freshBtn = document.getElementById('detail-save-notes');
+    if (freshBtn) flashSaved(freshBtn, 'Saved!');
   });
 
-  // Rating stars (delegated on container)
+  // Rating stars (mouse + keyboard accessible)
   var starsContainer = document.getElementById('detail-rating-stars');
-  starsContainer.addEventListener('click', function(e) {
-    var star = e.target.closest('.rating-star');
-    if (!star) return;
-    var value = parseInt(star.dataset.star, 10);
+
+  function applyStarRating(value, restoreFocus) {
     var anime = findAnimeById(animeId);
     if (!anime) return;
     anime.rating = value;
     stateCommit(); // re-renders details, updating stars visually
+    if (restoreFocus) {
+      var targetStar = document.querySelector('#detail-rating-stars .rating-star[data-star="' + value + '"]');
+      if (targetStar) targetStar.focus();
+    }
+  }
+
+  starsContainer.addEventListener('click', function(e) {
+    var star = e.target.closest('.rating-star');
+    if (!star) return;
+    applyStarRating(parseInt(star.dataset.star, 10), false);
+  });
+
+  starsContainer.addEventListener('keydown', function(e) {
+    var star = e.target.closest('.rating-star');
+    if (!star) return;
+    var val = parseInt(star.dataset.star, 10);
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      applyStarRating(val, true);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      var next = starsContainer.querySelector('.rating-star[data-star="' + Math.min(10, val + 1) + '"]');
+      if (next) next.focus();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      var prev = starsContainer.querySelector('.rating-star[data-star="' + Math.max(1, val - 1) + '"]');
+      if (prev) prev.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      var first = starsContainer.querySelector('.rating-star[data-star="1"]');
+      if (first) first.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      var last = starsContainer.querySelector('.rating-star[data-star="10"]');
+      if (last) last.focus();
+    }
   });
 
   starsContainer.addEventListener('mouseover', function(e) {
@@ -1107,4 +1200,5 @@ document.getElementById('journal-feed').addEventListener('click', function(e) {
 ═══════════════════════════════════════════════════════════ */
 stateInit();
 renderAll();
-console.log('[AniLog] Phase 2 loaded. Library:', state.library.length, 'entries.');
+syncFromHash();
+console.log('[AniLog] Ready. Library:', state.library.length, 'entries.');
