@@ -49,22 +49,28 @@ function storageLoad() {
         return item && typeof item === 'object' && typeof item.title === 'string' && item.title.trim() !== '';
       })
       .map(function(item) {
-        var totalEps   = Math.max(1, parseInt(item.totalEps, 10) || 1);
-        var watchedEps = Math.min(totalEps, Math.max(0, parseInt(item.watchedEps, 10) || 0));
-        var rating     = Math.min(10, Math.max(0, parseInt(item.rating, 10) || 0));
+        var parsedTotal = item.totalEps === null ? null : parseInt(item.totalEps, 10);
+        var totalEps    = (parsedTotal === null || isNaN(parsedTotal)) ? null : Math.max(1, parsedTotal);
+        var rawWatched  = Math.max(0, parseInt(item.watchedEps, 10) || 0);
+        var watchedEps  = totalEps !== null ? Math.min(totalEps, rawWatched) : rawWatched;
+        var rating      = Math.min(10, Math.max(0, parseInt(item.rating, 10) || 0));
         return {
-          id:         String(item.id || generateId()),
-          title:      item.title.trim(),
-          posterUrl:  typeof item.posterUrl === 'string' ? item.posterUrl.trim() : '',
-          totalEps:   totalEps,
-          watchedEps: watchedEps,
-          status:     ['watching', 'completed', 'plan', 'dropped'].indexOf(item.status) !== -1 ? item.status : 'plan',
-          genre:      typeof item.genre === 'string' ? item.genre.trim() : '',
-          rating:     rating,
-          review:     typeof item.review === 'string' ? item.review : '',
-          notes:      typeof item.notes === 'string' ? item.notes : '',
-          addedAt:    typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
-          updatedAt:  typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now())
+          id:           String(item.id || generateId()),
+          anilistId:    typeof item.anilistId === 'number' ? item.anilistId : null,
+          title:        item.title.trim(),
+          posterUrl:    typeof item.posterUrl === 'string' ? item.posterUrl.trim() : '',
+          totalEps:     totalEps,
+          watchedEps:   watchedEps,
+          status:       ['watching', 'completed', 'plan', 'dropped'].indexOf(item.status) !== -1 ? item.status : 'plan',
+          format:       typeof item.format === 'string' ? item.format : '',
+          releaseYear:  typeof item.releaseYear === 'number' ? item.releaseYear : null,
+          airingStatus: typeof item.airingStatus === 'string' ? item.airingStatus : '',
+          genre:        typeof item.genre === 'string' ? item.genre.trim() : '',
+          rating:       rating,
+          review:       typeof item.review === 'string' ? item.review : '',
+          notes:        typeof item.notes === 'string' ? item.notes : '',
+          addedAt:      typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
+          updatedAt:    typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now())
         };
       });
   } catch (e) {
@@ -137,6 +143,75 @@ function generateId() {
  */
 function findAnimeById(id) {
   return state.library.find(function(a) { return a.id === id; });
+}
+
+/**
+ * Finds one anime object by its AniList ID.
+ * @param {number} anilistId
+ * @returns {Object|undefined}
+ */
+function findAnimeByAnilistId(anilistId) {
+  if (!anilistId) return undefined;
+  return state.library.find(function(a) { return a.anilistId === anilistId; });
+}
+
+/**
+ * Formats total episodes for display (handles null/unknown counts).
+ * @param {Object} anime
+ * @returns {string}
+ */
+function formatTotalEps(anime) {
+  return anime.totalEps !== null && anime.totalEps !== undefined ? String(anime.totalEps) : '?';
+}
+
+/**
+ * Formats a concise episode/format metadata string for cards.
+ * Movies are not displayed as multi-episode TV shows.
+ * @param {Object} anime
+ * @returns {string}
+ */
+function formatCardMeta(anime) {
+  var parts = [];
+  if (anime.genre) parts.push(anime.genre);
+  if (anime.format === 'MOVIE') {
+    parts.push('Movie');
+  } else {
+    parts.push(formatTotalEps(anime) + ' eps');
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * Formats AniList airing/completion status for display.
+ * @param {string} airingStatus
+ * @returns {string}
+ */
+function formatAiringStatus(airingStatus) {
+  var map = {
+    FINISHED:         'Finished',
+    RELEASING:        'Airing',
+    NOT_YET_RELEASED: 'Upcoming',
+    CANCELLED:        'Cancelled',
+    HIATUS:           'Hiatus'
+  };
+  return map[airingStatus] || airingStatus || '—';
+}
+
+/**
+ * Formats AniList media format for display.
+ * @param {string} format
+ * @returns {string}
+ */
+function formatMediaFormat(format) {
+  var map = {
+    TV:       'TV',
+    TV_SHORT: 'TV Short',
+    MOVIE:    'Movie',
+    OVA:      'OVA',
+    ONA:      'ONA',
+    SPECIAL:  'Special'
+  };
+  return map[format] || format || '—';
 }
 
 /**
@@ -332,7 +407,7 @@ function renderDashboardWatching() {
             '<span class="ep-label">EP</span>' +
             '<span class="ep-current">' + anime.watchedEps + '</span>' +
             '<span class="ep-sep">/</span>' +
-            '<span class="ep-total">' + anime.totalEps + '</span>' +
+            '<span class="ep-total">' + formatTotalEps(anime) + '</span>' +
           '</div>' +
           '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
         '</div>' +
@@ -406,10 +481,10 @@ function renderLibrary() {
         '</div>' +
         '<div class="anime-card-info">' +
           '<h3 class="anime-card-title">' + escapeHtml(anime.title) + '</h3>' +
-          '<p class="anime-card-meta">' + escapeHtml(anime.genre || '') + ' · ' + anime.totalEps + ' eps</p>' +
+          '<p class="anime-card-meta">' + escapeHtml(formatCardMeta(anime)) + '</p>' +
           '<div class="anime-card-progress">' +
             '<div class="progress-bar progress-bar--sm"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
-            '<span class="ep-fraction">' + anime.watchedEps + '/' + anime.totalEps + '</span>' +
+            '<span class="ep-fraction">' + anime.watchedEps + '/' + formatTotalEps(anime) + '</span>' +
           '</div>' +
           '<div class="star-rating-sm">' + stars + '</div>' +
         '</div>' +
@@ -454,7 +529,10 @@ function renderDetails(anime) {
           '<div class="status-badge status-' + anime.status + '">' + statusLabel(anime.status) + '</div>' +
         '</div>' +
         '<div class="details-quick-stats">' +
-          '<div class="qs-row"><span class="qs-label">Episodes</span><span class="qs-value">' + anime.totalEps + '</span></div>' +
+          '<div class="qs-row"><span class="qs-label">Episodes</span><span class="qs-value">' + (anime.totalEps !== null ? anime.totalEps : 'Unknown') + '</span></div>' +
+          (anime.format ? '<div class="qs-row"><span class="qs-label">Format</span><span class="qs-value">' + escapeHtml(formatMediaFormat(anime.format)) + '</span></div>' : '') +
+          (anime.releaseYear ? '<div class="qs-row"><span class="qs-label">Year</span><span class="qs-value">' + anime.releaseYear + '</span></div>' : '') +
+          (anime.airingStatus ? '<div class="qs-row"><span class="qs-label">Air Status</span><span class="qs-value">' + escapeHtml(formatAiringStatus(anime.airingStatus)) + '</span></div>' : '') +
           '<div class="qs-row"><span class="qs-label">Status</span><span class="qs-value">' + statusLabel(anime.status) + '</span></div>' +
           '<div class="qs-row"><span class="qs-label">Genre</span><span class="qs-value">' + escapeHtml(anime.genre || '—') + '</span></div>' +
           '<div class="qs-row"><span class="qs-label">Rating</span><span class="qs-value">' + (rating > 0 ? rating + '/10' : 'Unrated') + '</span></div>' +
@@ -478,14 +556,14 @@ function renderDetails(anime) {
             '<div class="ep-display">' +
               '<span class="ep-big" id="detail-ep-current">' + anime.watchedEps + '</span>' +
               '<span class="ep-sep-big">/</span>' +
-              '<span class="ep-total-big">' + anime.totalEps + '</span>' +
+              '<span class="ep-total-big">' + formatTotalEps(anime) + '</span>' +
             '</div>' +
             '<div class="progress-bar progress-bar--lg">' +
               '<div class="progress-fill" id="detail-ep-bar" style="width:' + pct + '%"></div>' +
             '</div>' +
             '<div class="ep-controls">' +
               '<button class="btn-secondary btn-sm" id="detail-ep-minus" data-id="' + anime.id + '">− Episode</button>' +
-              '<span class="ep-pct" id="detail-ep-pct">' + pct + '% complete</span>' +
+              '<span class="ep-pct" id="detail-ep-pct">' + (anime.totalEps !== null ? pct + '% complete' : 'Ongoing / Unknown total') + '</span>' +
               '<button class="btn-primary btn-sm" id="detail-ep-plus" data-id="' + anime.id + '">+ Episode</button>' +
             '</div>' +
           '</div>' +
@@ -574,7 +652,7 @@ function renderJournal() {
         '<div class="journal-tags">' +
           (anime.genre ? '<span class="tag">' + escapeHtml(anime.genre) + '</span>' : '') +
           '<span class="tag">' + statusLabel(anime.status) + '</span>' +
-          '<span class="tag">EP ' + anime.watchedEps + '/' + anime.totalEps + '</span>' +
+          '<span class="tag">EP ' + anime.watchedEps + '/' + formatTotalEps(anime) + '</span>' +
         '</div>' +
         '<div class="journal-body">' +
           '<p>' + escapeHtml(anime.review).replace(/\n/g, '<br>') + '</p>' +
@@ -805,11 +883,11 @@ function isValidUrl(str) {
   }
 }
 
-// Hero "+ Add Anime" button
-document.getElementById('hero-add-btn').addEventListener('click', openAddModal);
+// Hero "+ Add Anime" button -> opens AniList search modal
+document.getElementById('hero-add-btn').addEventListener('click', openSearchModal);
 
-// Library "+ Add Anime" button
-document.getElementById('library-add-btn').addEventListener('click', openAddModal);
+// Library "+ Add Anime" button -> opens AniList search modal
+document.getElementById('library-add-btn').addEventListener('click', openSearchModal);
 
 // Modal close / cancel
 document.getElementById('modal-close').addEventListener('click', function() { hideModal('modal-overlay'); });
@@ -848,21 +926,25 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
       anime.genre      = genre;
     }
   } else {
-    // ADD — create new entry
+    // ADD — create new manual entry
     var now = Date.now();
     state.library.push({
-      id:         generateId(),
-      title:      title,
-      posterUrl:  poster,
-      totalEps:   totalEps,
-      watchedEps: watched,
-      status:     status,
-      genre:      genre,
-      rating:     0,
-      review:     '',
-      notes:      '',
-      addedAt:    now,
-      updatedAt:  now
+      id:           generateId(),
+      anilistId:    null,
+      title:        title,
+      posterUrl:    poster,
+      totalEps:     totalEps,
+      watchedEps:   watched,
+      status:       status,
+      format:       '',
+      releaseYear:  null,
+      airingStatus: '',
+      genre:        genre,
+      rating:       0,
+      review:       '',
+      notes:        '',
+      addedAt:      now,
+      updatedAt:    now
     });
   }
 
@@ -943,7 +1025,7 @@ document.querySelectorAll('.tab-btn').forEach(function(btn) {
 // Delegated listener on the grid (cards & empty-state actions are dynamically rendered)
 document.getElementById('anime-grid').addEventListener('click', function(e) {
   if (e.target.closest('.empty-add-btn')) {
-    openAddModal();
+    openSearchModal();
     return;
   }
   if (e.target.closest('.empty-reset-btn')) {
@@ -971,6 +1053,7 @@ document.getElementById('anime-grid').addEventListener('click', function(e) {
 // Close open modals with Escape key
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
+    hideModal('search-modal-overlay');
     hideModal('modal-overlay');
     hideModal('confirm-overlay');
   }
@@ -1116,18 +1199,19 @@ function wireDetailsEvents(animeId) {
 
 /**
  * Increases watched episodes by 1 for the given anime.
- * Automatically sets status to 'completed' when total is reached.
+ * Automatically sets status to 'completed' when a known total is reached
+ * and the anime is not currently ongoing/airing.
  * @param {string} animeId
  */
 function incrementEpisode(animeId) {
   var anime = findAnimeById(animeId);
   if (!anime) return;
-  if (anime.watchedEps >= anime.totalEps) return; // already at max
+  if (anime.totalEps !== null && anime.watchedEps >= anime.totalEps) return; // already at max
 
   anime.watchedEps += 1;
 
-  // Auto-complete
-  if (anime.watchedEps === anime.totalEps) {
+  // Auto-complete only if total is known and anime is not ongoing
+  if (anime.totalEps !== null && anime.watchedEps === anime.totalEps && anime.airingStatus !== 'RELEASING') {
     anime.status = 'completed';
   }
 
@@ -1146,8 +1230,8 @@ function decrementEpisode(animeId) {
 
   anime.watchedEps -= 1;
 
-  // If status was auto-completed and we go below total, revert to watching
-  if (anime.status === 'completed' && anime.watchedEps < anime.totalEps) {
+  // If status was completed and we go below total (or total is unknown), revert to watching
+  if (anime.status === 'completed' && (anime.totalEps === null || anime.watchedEps < anime.totalEps)) {
     anime.status = 'watching';
   }
 
@@ -1192,6 +1276,444 @@ document.getElementById('journal-feed').addEventListener('click', function(e) {
   state.currentAnimeId = id;
   renderDetails(anime);
   navigateTo('details');
+});
+
+
+/* ═══════════════════════════════════════════════════════════
+   5.9 ANILIST SEARCH & CATALOGUE INTEGRATION
+═══════════════════════════════════════════════════════════ */
+
+var ANILIST_ENDPOINT = 'https://graphql.anilist.co';
+var ANILIST_QUERY = [
+  'query ($search: String, $page: Int, $perPage: Int) {',
+  '  Page(page: $page, perPage: $perPage) {',
+  '    media(search: $search, type: ANIME, sort: SEARCH_MATCH) {',
+  '      id',
+  '      title { romaji english }',
+  '      coverImage { large medium }',
+  '      format',
+  '      episodes',
+  '      status',
+  '      seasonYear',
+  '      startDate { year }',
+  '      genres',
+  '    }',
+  '  }',
+  '}'
+].join('\n');
+
+var searchState = {
+  debounceTimer: null,
+  abortCtrl:     null,
+  results:       [],
+  selectedMedia: null,
+  lastQuery:     ''
+};
+
+/** Opens the AniList search modal in Step 1 (search view). */
+function openSearchModal() {
+  searchState.selectedMedia = null;
+  document.getElementById('search-view').style.display         = '';
+  document.getElementById('search-confirm-view').style.display = 'none';
+  document.getElementById('search-modal-title').textContent    = 'Search Anime Catalogue';
+  showModal('search-modal-overlay');
+  setTimeout(function() {
+    document.getElementById('anilist-search-input').focus();
+  }, 50);
+}
+
+/** Closes the AniList search modal and cancels any pending request. */
+function closeSearchModal() {
+  clearTimeout(searchState.debounceTimer);
+  if (searchState.abortCtrl) {
+    searchState.abortCtrl.abort();
+    searchState.abortCtrl = null;
+  }
+  hideModal('search-modal-overlay');
+}
+
+/** Returns preferred display title (English, falling back to Romaji). */
+function getMediaTitle(media) {
+  if (!media || !media.title) return 'Untitled';
+  return media.title.english || media.title.romaji || 'Untitled';
+}
+
+/** Returns release year from seasonYear or startDate.year, or null. */
+function getMediaYear(media) {
+  if (!media) return null;
+  return media.seasonYear || (media.startDate && media.startDate.year) || null;
+}
+
+/**
+ * Executes a GraphQL search against AniList for ANIME media.
+ * @param {string} query
+ */
+function fetchAniListSearch(query) {
+  var resultsArea = document.getElementById('anilist-results-area');
+
+  if (searchState.abortCtrl) {
+    searchState.abortCtrl.abort();
+  }
+  searchState.abortCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  searchState.lastQuery = query;
+
+  resultsArea.innerHTML =
+    '<div class="search-loading" role="status" aria-live="polite">' +
+      '<div class="search-spinner" aria-hidden="true"></div>' +
+      '<p class="search-state-msg">Searching AniList catalogue…</p>' +
+    '</div>';
+
+  var fetchOpts = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept':       'application/json'
+    },
+    body: JSON.stringify({
+      query: ANILIST_QUERY,
+      variables: { search: query, page: 1, perPage: 12 }
+    })
+  };
+  if (searchState.abortCtrl) fetchOpts.signal = searchState.abortCtrl.signal;
+
+  fetch(ANILIST_ENDPOINT, fetchOpts)
+    .then(function(res) {
+      if (res.status === 429) {
+        throw new Error('RATE_LIMIT');
+      }
+      if (!res.ok) {
+        throw new Error('HTTP_' + res.status);
+      }
+      return res.json();
+    })
+    .then(function(json) {
+      if (json.errors && json.errors.length > 0) {
+        throw new Error(json.errors[0].message || 'API_ERROR');
+      }
+      var mediaList = (json.data && json.data.Page && Array.isArray(json.data.Page.media))
+        ? json.data.Page.media
+        : [];
+      searchState.results = mediaList;
+      renderSearchResults(mediaList, query);
+    })
+    .catch(function(err) {
+      if (err && err.name === 'AbortError') return; // superseded by newer query
+      var msg = 'Could not reach AniList. Please check your connection and try again.';
+      if (err && err.message === 'RATE_LIMIT') {
+        msg = 'AniList rate limit reached (429). Please wait a moment and try again.';
+      }
+      resultsArea.innerHTML =
+        '<div class="search-error-box">' +
+          '<p class="search-state-msg">' + escapeHtml(msg) + '</p>' +
+          '<button type="button" class="btn-secondary btn-sm" id="search-retry-btn">Retry Search</button>' +
+        '</div>';
+    });
+}
+
+/**
+ * Renders AniList search result cards into #anilist-results-area.
+ * @param {Array} mediaList
+ * @param {string} query
+ */
+function renderSearchResults(mediaList, query) {
+  var resultsArea = document.getElementById('anilist-results-area');
+
+  if (!mediaList || mediaList.length === 0) {
+    resultsArea.innerHTML =
+      '<div class="search-empty-box">' +
+        '<p class="search-state-msg">No anime found for "<strong>' + escapeHtml(query) + '</strong>".</p>' +
+      '</div>';
+    return;
+  }
+
+  resultsArea.innerHTML = '<div class="search-results-grid">' + mediaList.map(function(media) {
+    var title      = getMediaTitle(media);
+    var year       = getMediaYear(media);
+    var format     = formatMediaFormat(media.format);
+    var epsText    = media.format === 'MOVIE'
+      ? 'Movie'
+      : (media.episodes !== null && media.episodes !== undefined ? media.episodes + ' eps' : '? eps');
+    var airText    = formatAiringStatus(media.status);
+    var cover      = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+    var alreadyIn  = !!findAnimeByAnilistId(media.id);
+
+    return (
+      '<button type="button" class="search-result-card' + (alreadyIn ? ' is-added' : '') + '" data-anilist-id="' + media.id + '">' +
+        '<div class="search-result-cover">' +
+          (cover
+            ? '<img src="' + escapeHtml(cover) + '" alt="' + escapeHtml(title) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+              '<div class="poster-placeholder search-result-fallback" style="display:none"><span class="poster-kanji-sm">' + escapeHtml(title.charAt(0)) + '</span></div>'
+            : '<div class="poster-placeholder search-result-fallback"><span class="poster-kanji-sm">' + escapeHtml(title.charAt(0)) + '</span></div>') +
+          (alreadyIn ? '<span class="search-added-badge">In Library</span>' : '') +
+        '</div>' +
+        '<div class="search-result-info">' +
+          '<h3 class="search-result-title">' + escapeHtml(title) + '</h3>' +
+          '<p class="search-result-meta">' +
+            (year ? year + ' · ' : '') + escapeHtml(format) + ' · ' + escapeHtml(epsText) +
+          '</p>' +
+          '<span class="search-result-status">' + escapeHtml(airText) + '</span>' +
+        '</div>' +
+      '</button>'
+    );
+  }).join('') + '</div>';
+}
+
+/**
+ * Transitions the search modal to Step 2 for the selected AniList entry.
+ * @param {number} mediaId
+ */
+function selectSearchResult(mediaId) {
+  var media = searchState.results.find(function(m) { return m.id === mediaId; });
+  if (!media) return;
+
+  searchState.selectedMedia = media;
+  var title     = getMediaTitle(media);
+  var year      = getMediaYear(media);
+  var format    = formatMediaFormat(media.format);
+  var isMovie   = media.format === 'MOVIE';
+  var totalEps  = isMovie ? 1 : (typeof media.episodes === 'number' ? media.episodes : null);
+  var epsLabel  = isMovie ? 'Movie (1 feature)' : (totalEps !== null ? totalEps + ' episodes' : 'Unknown (ongoing/TBA)');
+  var cover     = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+  var genres    = Array.isArray(media.genres) ? media.genres.slice(0, 4).join(', ') : '';
+  var existing  = findAnimeByAnilistId(media.id);
+
+  document.getElementById('search-modal-title').textContent    = 'Add to Library';
+  document.getElementById('search-view').style.display         = 'none';
+  document.getElementById('search-confirm-view').style.display = '';
+
+  document.getElementById('selected-anime-preview').innerHTML =
+    '<div class="selected-cover">' +
+      (cover
+        ? '<img src="' + escapeHtml(cover) + '" alt="' + escapeHtml(title) + '" onerror="this.style.display=\'none\'">'
+        : '<div class="poster-placeholder poster-lg"><span class="poster-kanji">' + escapeHtml(title.charAt(0)) + '</span></div>') +
+    '</div>' +
+    '<div class="selected-meta">' +
+      '<h3 class="selected-title">' + escapeHtml(title) + '</h3>' +
+      (media.title && media.title.romaji && media.title.romaji !== title
+        ? '<p class="selected-romaji">' + escapeHtml(media.title.romaji) + '</p>'
+        : '') +
+      '<div class="selected-tags">' +
+        '<span class="tag">' + escapeHtml(format) + '</span>' +
+        (year ? '<span class="tag">' + year + '</span>' : '') +
+        '<span class="tag">' + escapeHtml(epsLabel) + '</span>' +
+        '<span class="tag">' + escapeHtml(formatAiringStatus(media.status)) + '</span>' +
+      '</div>' +
+      (genres ? '<p class="selected-genres">' + escapeHtml(genres) + '</p>' : '') +
+      (existing
+        ? '<p class="duplicate-notice">Already in your library (' + statusLabel(existing.status) + '). <button type="button" class="btn-link" id="view-existing-btn" data-id="' + existing.id + '">Open Details →</button></p>'
+        : '') +
+    '</div>';
+
+  // Configure form defaults & constraints
+  var statusEl  = document.getElementById('search-add-status');
+  var watchedEl = document.getElementById('search-add-watched');
+  var ratingEl  = document.getElementById('search-add-rating');
+  var saveBtn   = document.getElementById('search-save-btn');
+  var watchedLabel = document.querySelector('label[for="search-add-watched"]');
+
+  document.getElementById('error-search-status').textContent  = '';
+  document.getElementById('error-search-watched').textContent = '';
+  watchedEl.classList.remove('input-error');
+  statusEl.classList.remove('input-error');
+
+  statusEl.value = media.status === 'NOT_YET_RELEASED' ? 'plan' : 'watching';
+  watchedEl.value = '0';
+  watchedEl.max   = totalEps !== null ? String(totalEps) : '9999';
+  ratingEl.value  = '0';
+
+  if (isMovie) {
+    watchedLabel.textContent = 'Watched (0 = No, 1 = Yes)';
+  } else {
+    watchedLabel.textContent = 'Episodes Watched' + (totalEps !== null ? ' (max ' + totalEps + ')' : '');
+  }
+
+  saveBtn.disabled = !!existing;
+  saveBtn.textContent = existing ? 'Already Added' : 'Add to Library';
+}
+
+// Search input with 400ms debounce
+document.getElementById('anilist-search-input').addEventListener('input', function() {
+  var q = this.value.trim();
+  var clearBtn = document.getElementById('anilist-search-clear');
+  clearBtn.style.display = q.length > 0 ? '' : 'none';
+
+  clearTimeout(searchState.debounceTimer);
+  if (q.length < 2) {
+    if (searchState.abortCtrl) searchState.abortCtrl.abort();
+    document.getElementById('anilist-results-area').innerHTML =
+      '<p class="search-state-msg">Type at least 2 characters to search the AniList catalogue.</p>';
+    return;
+  }
+
+  searchState.debounceTimer = setTimeout(function() {
+    fetchAniListSearch(q);
+  }, 400);
+});
+
+// Immediate search on Enter
+document.getElementById('anilist-search-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    var q = this.value.trim();
+    if (q.length >= 2) {
+      clearTimeout(searchState.debounceTimer);
+      fetchAniListSearch(q);
+    }
+  }
+});
+
+// Clear search input
+document.getElementById('anilist-search-clear').addEventListener('click', function() {
+  var input = document.getElementById('anilist-search-input');
+  input.value = '';
+  this.style.display = 'none';
+  clearTimeout(searchState.debounceTimer);
+  if (searchState.abortCtrl) searchState.abortCtrl.abort();
+  document.getElementById('anilist-results-area').innerHTML =
+    '<p class="search-state-msg">Type at least 2 characters to search the AniList catalogue.</p>';
+  input.focus();
+});
+
+// Delegated clicks inside results area (result selection + retry)
+document.getElementById('anilist-results-area').addEventListener('click', function(e) {
+  var retryBtn = e.target.closest('#search-retry-btn');
+  if (retryBtn && searchState.lastQuery.length >= 2) {
+    fetchAniListSearch(searchState.lastQuery);
+    return;
+  }
+  var card = e.target.closest('.search-result-card');
+  if (card) {
+    selectSearchResult(parseInt(card.dataset.anilistId, 10));
+  }
+});
+
+// Delegated click for "Open Details ->" on duplicate notice
+document.getElementById('selected-anime-preview').addEventListener('click', function(e) {
+  var btn = e.target.closest('#view-existing-btn');
+  if (!btn) return;
+  var anime = findAnimeById(btn.dataset.id);
+  if (!anime) return;
+  closeSearchModal();
+  state.currentAnimeId = anime.id;
+  renderDetails(anime);
+  navigateTo('details');
+});
+
+// Back to results
+document.getElementById('search-back-btn').addEventListener('click', function() {
+  searchState.selectedMedia = null;
+  document.getElementById('search-modal-title').textContent    = 'Search Anime Catalogue';
+  document.getElementById('search-confirm-view').style.display = 'none';
+  document.getElementById('search-view').style.display         = '';
+});
+
+// Close & cancel buttons
+document.getElementById('search-modal-close').addEventListener('click', closeSearchModal);
+document.getElementById('search-cancel-btn').addEventListener('click', closeSearchModal);
+document.getElementById('search-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeSearchModal();
+});
+
+// Switch to manual entry modal
+document.getElementById('open-manual-add-btn').addEventListener('click', function() {
+  closeSearchModal();
+  openAddModal();
+});
+
+// Auto-sync watched episodes helper when user picks Completed on a known-length anime/movie
+document.getElementById('search-add-status').addEventListener('change', function() {
+  var media = searchState.selectedMedia;
+  if (!media) return;
+  var totalEps = media.format === 'MOVIE' ? 1 : (typeof media.episodes === 'number' ? media.episodes : null);
+  var watchedEl = document.getElementById('search-add-watched');
+  if (this.value === 'completed' && totalEps !== null) {
+    watchedEl.value = String(totalEps);
+  } else if (this.value === 'plan') {
+    watchedEl.value = '0';
+  }
+});
+
+// Save selected AniList anime to library
+document.getElementById('search-add-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var media = searchState.selectedMedia;
+  if (!media) return;
+
+  // Prevent duplicate by AniList ID
+  if (findAnimeByAnilistId(media.id)) {
+    return;
+  }
+
+  var statusEl  = document.getElementById('search-add-status');
+  var watchedEl = document.getElementById('search-add-watched');
+  var ratingEl  = document.getElementById('search-add-rating');
+  var errStatus  = document.getElementById('error-search-status');
+  var errWatched = document.getElementById('error-search-watched');
+
+  errStatus.textContent  = '';
+  errWatched.textContent = '';
+  statusEl.classList.remove('input-error');
+  watchedEl.classList.remove('input-error');
+
+  var isMovie  = media.format === 'MOVIE';
+  var totalEps = isMovie ? 1 : (typeof media.episodes === 'number' ? media.episodes : null);
+  var status   = statusEl.value;
+  var rawW     = watchedEl.value.trim();
+  var watched  = rawW === '' ? 0 : parseInt(rawW, 10);
+  var rating   = Math.min(10, Math.max(0, parseInt(ratingEl.value, 10) || 0));
+
+  var valid = true;
+  if (isNaN(watched) || watched < 0) {
+    watchedEl.classList.add('input-error');
+    errWatched.textContent = 'Watched episodes cannot be negative.';
+    valid = false;
+  } else if (totalEps !== null && watched > totalEps) {
+    watchedEl.classList.add('input-error');
+    errWatched.textContent = 'Cannot exceed total episodes (' + totalEps + ').';
+    valid = false;
+  }
+
+  if (status === 'plan' && !isNaN(watched) && watched > 0) {
+    watchedEl.classList.add('input-error');
+    errWatched.textContent = 'Plan to Watch entries must have 0 watched episodes.';
+    valid = false;
+  } else if (status === 'completed' && media.status === 'RELEASING') {
+    statusEl.classList.add('input-error');
+    errStatus.textContent = 'Ongoing anime cannot be marked Completed yet.';
+    valid = false;
+  } else if (status === 'completed' && totalEps !== null && !isNaN(watched) && watched < totalEps) {
+    watchedEl.classList.add('input-error');
+    errWatched.textContent = 'Completed anime must have all ' + totalEps + ' episodes watched.';
+    valid = false;
+  }
+
+  if (!valid) return;
+
+  var now    = Date.now();
+  var cover  = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+  var genres = Array.isArray(media.genres) ? media.genres.slice(0, 3).join(', ') : '';
+
+  state.library.push({
+    id:           generateId(),
+    anilistId:    media.id,
+    title:        getMediaTitle(media),
+    posterUrl:    cover,
+    totalEps:     totalEps,
+    watchedEps:   watched,
+    status:       status,
+    format:       media.format || '',
+    releaseYear:  getMediaYear(media),
+    airingStatus: media.status || '',
+    genre:        genres,
+    rating:       rating,
+    review:       '',
+    notes:        '',
+    addedAt:      now,
+    updatedAt:    now
+  });
+
+  closeSearchModal();
+  stateCommit();
 });
 
 

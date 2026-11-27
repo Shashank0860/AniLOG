@@ -31,7 +31,93 @@
   </header>
 
   <!-- ═══════════════════════════════════════════════
-       MODAL — Add / Edit Anime
+       MODAL — AniList Search & Add
+  ═══════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="search-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
+    <div class="modal-panel modal-panel--lg">
+      <div class="modal-header">
+        <h2 class="modal-title" id="search-modal-title">Search Anime Catalogue</h2>
+        <button class="modal-close" id="search-modal-close" aria-label="Close">✕</button>
+      </div>
+
+      <!-- Step 1: Search Input + Results -->
+      <div class="search-modal-body" id="search-view">
+        <div class="search-box search-box--modal">
+          <span class="search-icon" aria-hidden="true">◎</span>
+          <input
+            type="text"
+            class="search-input"
+            id="anilist-search-input"
+            placeholder="Search anime (e.g. Naruto, Frieren, Spirited Away)..."
+            aria-label="Search AniList anime catalogue"
+            autocomplete="off"
+          />
+          <button type="button" class="search-clear-btn" id="anilist-search-clear" aria-label="Clear search" style="display:none">✕</button>
+        </div>
+
+        <div class="anilist-results-area" id="anilist-results-area">
+          <p class="search-state-msg">Type at least 2 characters to search the AniList catalogue.</p>
+        </div>
+
+        <div class="search-modal-footer">
+          <span class="search-powered">Powered by AniList GraphQL</span>
+          <button type="button" class="btn-secondary btn-sm" id="open-manual-add-btn">Add Manually Instead</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Selected Anime Confirmation & Tracking Setup -->
+      <div class="search-confirm-body" id="search-confirm-view" style="display:none">
+        <button type="button" class="btn-back btn-back--inline" id="search-back-btn">← Back to Results</button>
+
+        <div class="selected-anime-preview" id="selected-anime-preview"></div>
+
+        <form class="modal-form modal-form--compact" id="search-add-form" novalidate>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="search-add-status">Tracking Status <span class="form-required">*</span></label>
+              <select class="form-input form-select" id="search-add-status" required>
+                <option value="watching">Watching</option>
+                <option value="completed">Completed</option>
+                <option value="plan">Plan to Watch</option>
+                <option value="dropped">Dropped</option>
+              </select>
+              <span class="form-error" id="error-search-status"></span>
+            </div>
+            <div class="form-group" id="search-watched-group">
+              <label class="form-label" for="search-add-watched">Episodes Watched</label>
+              <input class="form-input" type="number" id="search-add-watched" min="0" max="9999" value="0" />
+              <span class="form-error" id="error-search-watched"></span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="search-add-rating">Personal Rating <span class="form-hint">(optional, 0–10)</span></label>
+            <select class="form-input form-select" id="search-add-rating">
+              <option value="0">Unrated</option>
+              <option value="10">10 / 10 — Masterpiece</option>
+              <option value="9">9 / 10 — Great</option>
+              <option value="8">8 / 10 — Very Good</option>
+              <option value="7">7 / 10 — Good</option>
+              <option value="6">6 / 10 — Fine</option>
+              <option value="5">5 / 10 — Average</option>
+              <option value="4">4 / 10 — Bad</option>
+              <option value="3">3 / 10 — Very Bad</option>
+              <option value="2">2 / 10 — Horrible</option>
+              <option value="1">1 / 10 — Appalling</option>
+            </select>
+          </div>
+
+          <div class="form-actions form-actions--flush">
+            <button type="button" class="btn-secondary" id="search-cancel-btn">Cancel</button>
+            <button type="submit" class="btn-primary" id="search-save-btn">Add to Library</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MODAL — Manual Add / Edit Anime
        Shown/hidden via .modal-open on <body>
   ═══════════════════════════════════════════════ -->
   <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">

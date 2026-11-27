@@ -12,6 +12,13 @@
 
 ## Features
 
+- **AniList Catalogue Search & Integration**:
+  - Live search against the public AniList GraphQL API (`https://graphql.anilist.co`) with a 400ms debounce.
+  - Displays cover image, English/Romaji title, release year, format (TV, Movie, OVA, ONA, Special), episode count, and airing status.
+  - Step-by-step add workflow: select a title, set initial tracking status, current episode progress, and optional 0–10 rating.
+  - Duplicate prevention by AniList ID with link to existing library entry.
+  - Support for ongoing series with unknown/null episode totals and specialized handling for movies.
+  - Option to fall back to manual anime entry at any time.
 - **Dashboard**:
   - Manga-inspired hero section with halftone screentone textures and conic speed lines.
   - Live statistics strip: **Total Anime**, **Episodes Watched**, **Completed**, **Watching**, and **Plan to Watch**.
@@ -97,6 +104,13 @@ Each anime entry follows this structure:
 
 ## Screenshots
 
+- **AniList Catalogue Search & Integration**:
+  - Live search against the public AniList GraphQL API (`https://graphql.anilist.co`) with a 400ms debounce.
+  - Displays cover image, English/Romaji title, release year, format (TV, Movie, OVA, ONA, Special), episode count, and airing status.
+  - Step-by-step add workflow: select a title, set initial tracking status, current episode progress, and optional 0–10 rating.
+  - Duplicate prevention by AniList ID with link to existing library entry.
+  - Support for ongoing series with unknown/null episode totals and specialized handling for movies.
+  - Option to fall back to manual anime entry at any time.
 - **Dashboard**: Manga hero, 5-stat black strip, Currently Watching & Recently Completed panels.
 - **My Library**: Search bar, status tabs, and responsive 2:3 anime card grid.
 - **Anime Details**: Episode progress tracker, 10-star rating widget, and lined-paper review/notes editors.
