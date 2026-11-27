@@ -753,17 +753,26 @@ function getLatestQuoteTimestamp(anime) {
  */
 function buildJournalQuotePanel(quote, anime, globalIdx) {
   var variant = QUOTE_PANEL_VARIANTS[globalIdx % QUOTE_PANEL_VARIANTS.length];
+  var panelId = 'journal-quote-' + escapeHtml(quote.id);
   var speakerHtml = quote.speaker
     ? '<span class="jq-speaker">— ' + escapeHtml(quote.speaker) + '</span>'
     : '<span class="jq-speaker jq-speaker--muted">— Memorable Line</span>';
   var episodeHtml = (quote.episode !== null && quote.episode !== undefined)
     ? '<span class="jq-episode">EP ' + quote.episode + '</span>'
     : '';
-  var animeTitleHtml = '<span class="jq-anime-title">' + escapeHtml(anime.title) + '</span>';
+  var animeTitleHtml =
+    '<button type="button" class="jq-anime-title journal-view-btn" data-id="' + anime.id + '" title="Open anime details">' +
+      escapeHtml(anime.title) +
+    '</button>';
+  var metaInlineHtml =
+    '<span class="jq-meta-group">' +
+      animeTitleHtml +
+      (episodeHtml ? '<span class="jq-meta-sep" aria-hidden="true">·</span>' + episodeHtml : '') +
+    '</span>';
 
   if (variant === 'bubble') {
     return (
-      '<figure class="quote-panel quote-panel--bubble">' +
+      '<figure class="quote-panel quote-panel--bubble" id="' + panelId + '">' +
         '<div class="jq-bubble-box">' +
           '<span class="jq-mark" aria-hidden="true">“</span>' +
           '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
@@ -771,7 +780,7 @@ function buildJournalQuotePanel(quote, anime, globalIdx) {
         '</div>' +
         '<figcaption class="jq-attribution">' +
           speakerHtml +
-          '<span class="jq-meta-group">' + animeTitleHtml + episodeHtml + '</span>' +
+          metaInlineHtml +
         '</figcaption>' +
       '</figure>'
     );
@@ -779,7 +788,7 @@ function buildJournalQuotePanel(quote, anime, globalIdx) {
 
   if (variant === 'split') {
     return (
-      '<figure class="quote-panel quote-panel--split">' +
+      '<figure class="quote-panel quote-panel--split" id="' + panelId + '">' +
         '<div class="jq-split-main">' +
           '<span class="jq-mark" aria-hidden="true">“</span>' +
           '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
@@ -795,12 +804,12 @@ function buildJournalQuotePanel(quote, anime, globalIdx) {
 
   if (variant === 'inverted') {
     return (
-      '<figure class="quote-panel quote-panel--inverted">' +
+      '<figure class="quote-panel quote-panel--inverted" id="' + panelId + '">' +
         '<span class="jq-mark" aria-hidden="true">“</span>' +
         '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
         '<figcaption class="jq-attribution">' +
           speakerHtml +
-          '<span class="jq-meta-group">' + animeTitleHtml + episodeHtml + '</span>' +
+          metaInlineHtml +
         '</figcaption>' +
       '</figure>'
     );
@@ -808,12 +817,12 @@ function buildJournalQuotePanel(quote, anime, globalIdx) {
 
   // Default: 'dramatic' full-width manga panel
   return (
-    '<figure class="quote-panel quote-panel--dramatic">' +
+    '<figure class="quote-panel quote-panel--dramatic" id="' + panelId + '">' +
       '<span class="jq-mark" aria-hidden="true">“</span>' +
       '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
       '<figcaption class="jq-attribution">' +
         speakerHtml +
-        '<span class="jq-meta-group">' + animeTitleHtml + episodeHtml + '</span>' +
+        metaInlineHtml +
       '</figcaption>' +
     '</figure>'
   );
@@ -854,6 +863,43 @@ function renderJournal() {
     return;
   }
 
+  // Quotes-only tab: render a pure quote-focused gallery without anime posters or headers
+  if (filter === 'quotes') {
+    var allQuotes = [];
+    withQuotes.forEach(function(anime) {
+      anime.quotes.forEach(function(q) {
+        allQuotes.push({ quote: q, anime: anime });
+      });
+    });
+    allQuotes.sort(function(a, b) {
+      return (b.quote.createdAt || 0) - (a.quote.createdAt || 0);
+    });
+
+    tocList.innerHTML = allQuotes.map(function(item, idx) {
+      var num = String(idx + 1).padStart(2, '0');
+      var label = item.quote.speaker
+        ? item.quote.speaker
+        : (item.quote.text.length > 26 ? item.quote.text.slice(0, 26) + '…' : item.quote.text);
+      var badge = (item.quote.episode !== null && item.quote.episode !== undefined)
+        ? 'EP ' + item.quote.episode
+        : 'Q';
+      return (
+        '<li class="toc-item" data-scroll-target="journal-quote-' + escapeHtml(item.quote.id) + '">' +
+          '<span class="toc-num">' + num + '</span>' +
+          '<span class="toc-label">' + escapeHtml(label) + '</span>' +
+          '<span class="toc-badge">' + badge + '</span>' +
+        '</li>'
+      );
+    }).join('');
+
+    var standalonePanels = allQuotes.map(function(item, idx) {
+      return buildJournalQuotePanel(item.quote, item.anime, idx);
+    }).join('');
+
+    feed.innerHTML = '<div class="journal-quotes-grid journal-quotes-standalone">' + standalonePanels + '</div>';
+    return;
+  }
+
   // Sort by latest activity (review update, quote creation, or addedAt)
   entries = entries.slice().sort(function(a, b) {
     var aLatest = Math.max(a.updatedAt || 0, a.addedAt || 0, getLatestQuoteTimestamp(a));
@@ -866,8 +912,12 @@ function renderJournal() {
     var qCount = Array.isArray(anime.quotes) ? anime.quotes.length : 0;
     var hasRev = Boolean(anime.review && anime.review.trim() !== '');
     var badge = (hasRev && qCount > 0) ? 'R+' + qCount + 'Q' : (hasRev ? 'R' : qCount + 'Q');
+    var sortedQ = qCount > 0 ? anime.quotes.slice().sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }) : [];
+    var targetId = hasRev
+      ? 'journal-entry-' + anime.id
+      : ('journal-quote-' + escapeHtml(sortedQ[0].id));
     return (
-      '<li class="toc-item" data-journal-id="' + anime.id + '">' +
+      '<li class="toc-item" data-scroll-target="' + targetId + '">' +
         '<span class="toc-num">' + num + '</span>' +
         '<span class="toc-label">' + escapeHtml(anime.title) + '</span>' +
         '<span class="toc-badge">' + badge + '</span>' +
@@ -887,6 +937,16 @@ function renderJournal() {
 
     var showReview = hasReview && (filter === 'all' || filter === 'reviews');
     var showQuotes = quotes.length > 0 && (filter === 'all' || filter === 'quotes');
+
+    // Quote-only entries in "All" tab: render pure quote cards without anime poster or header
+    if (!showReview && showQuotes) {
+      var purePanels = quotes.map(function(q) {
+        var html = buildJournalQuotePanel(q, anime, globalQuoteIdx);
+        globalQuoteIdx++;
+        return html;
+      }).join('');
+      return '<div class="journal-quotes-grid journal-quotes-standalone">' + purePanels + '</div>';
+    }
 
     var reviewHtml = '';
     if (showReview) {
@@ -1736,7 +1796,8 @@ document.getElementById('journal-toc-list').addEventListener('click', function(e
   if (!item) return;
   document.querySelectorAll('.toc-item').forEach(function(i) { i.classList.remove('active'); });
   item.classList.add('active');
-  var entry = document.getElementById('journal-entry-' + item.dataset.journalId);
+  var targetId = item.dataset.scrollTarget || ('journal-entry-' + item.dataset.journalId);
+  var entry = document.getElementById(targetId);
   if (entry) entry.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 

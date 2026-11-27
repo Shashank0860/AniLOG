@@ -2507,11 +2507,18 @@ body.modal-open {
   align-items: start;
 }
 
+.journal-quotes-standalone {
+  width: 100%;
+  gap: var(--space-xl);
+}
+
 /* ── Manga Quote Panels (4 Monochrome Compositions) ── */
 .quote-panel {
   margin: 0;
   position: relative;
   min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .jq-mark {
@@ -2524,8 +2531,8 @@ body.modal-open {
 
 .jq-text {
   font-family: var(--font-title);
-  font-size: 1.15rem;
-  line-height: 1.55;
+  font-size: 1.2rem;
+  line-height: 1.62;
   color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2534,10 +2541,10 @@ body.modal-open {
 
 .jq-attribution {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-sm);
+  gap: var(--space-sm) var(--space-md);
 }
 
 .jq-speaker {
@@ -2554,28 +2561,52 @@ body.modal-open {
 }
 
 .jq-meta-group {
-  display: flex;
-  align-items: center;
+  display: inline-flex;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: var(--space-xs);
+  gap: 5px;
+  min-width: 0;
 }
 
 .jq-anime-title {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--ink-light);
+  transition: color 0.15s ease;
+}
+
+.jq-anime-title:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.jq-anime-title:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.jq-meta-sep {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
   color: var(--ink-light);
 }
 
 .jq-episode {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  padding: 2px 7px;
-  border: var(--border-thin);
-  background: var(--white);
-  color: var(--ink);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-light);
 }
 
 /* Variant 1: Dramatic Full-Width Panel */
@@ -2603,15 +2634,15 @@ body.modal-open {
 
 .quote-panel--dramatic .jq-mark {
   display: block;
-  font-size: 4rem;
+  font-size: 4.25rem;
   color: var(--ink);
   opacity: 0.18;
-  margin-bottom: -12px;
+  margin-bottom: -10px;
 }
 
 .quote-panel--dramatic .jq-text {
-  font-size: 1.35rem;
-  line-height: 1.5;
+  font-size: 1.42rem;
+  line-height: 1.55;
   font-weight: 700;
   margin-bottom: var(--space-lg);
 }
@@ -2645,7 +2676,7 @@ body.modal-open {
 }
 
 .jq-bubble-box .jq-text {
-  font-size: 1.05rem;
+  font-size: 1.12rem;
 }
 
 .jq-bubble-tail {
@@ -2672,6 +2703,7 @@ body.modal-open {
 }
 
 .quote-panel--bubble .jq-attribution {
+  padding-top: 4px;
   padding-left: var(--space-md);
 }
 
@@ -2686,7 +2718,7 @@ body.modal-open {
 }
 
 .jq-split-main {
-  padding: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg);
   position: relative;
 }
 
@@ -2698,7 +2730,7 @@ body.modal-open {
 }
 
 .jq-split-main .jq-text {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
 }
 
 .jq-split-aside {
@@ -2732,7 +2764,7 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-xs);
+  gap: 3px;
 }
 
 /* Variant 4: Dark Inverted Panel */
@@ -2740,7 +2772,7 @@ body.modal-open {
   border: var(--border-heavy);
   background: var(--ink);
   color: var(--white);
-  padding: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg) var(--space-lg);
   box-shadow: 5px 5px 0 var(--ink-light);
   overflow: hidden;
 }
@@ -2767,12 +2799,12 @@ body.modal-open {
 
 .quote-panel--inverted .jq-text {
   color: var(--white);
-  font-size: 1.1rem;
-  margin-bottom: var(--space-md);
+  font-size: 1.15rem;
+  margin-bottom: var(--space-lg);
 }
 
 .quote-panel--inverted .jq-attribution {
-  padding-top: var(--space-sm);
+  padding-top: var(--space-md);
   border-top: 1px solid rgba(255, 255, 255, 0.25);
 }
 
@@ -2781,14 +2813,18 @@ body.modal-open {
 }
 
 .quote-panel--inverted .jq-speaker--muted,
-.quote-panel--inverted .jq-anime-title {
+.quote-panel--inverted .jq-anime-title,
+.quote-panel--inverted .jq-meta-sep,
+.quote-panel--inverted .jq-episode {
   color: rgba(255, 255, 255, 0.72);
 }
 
-.quote-panel--inverted .jq-episode {
-  background: var(--white);
-  color: var(--ink);
-  border-color: var(--white);
+.quote-panel--inverted .jq-anime-title:hover {
+  color: var(--white);
+}
+
+.quote-panel--inverted .jq-anime-title:focus-visible {
+  outline-color: var(--white);
 }
 
 /* Focus visibility for new interactive elements */
@@ -2833,12 +2869,39 @@ body.modal-open {
     padding: var(--space-md);
   }
 
+  .journal-quotes-standalone {
+    gap: var(--space-lg);
+  }
+
   .quote-panel--dramatic {
     padding: var(--space-lg) var(--space-md) var(--space-md);
+    box-shadow: 4px 4px 0 var(--ink);
   }
 
   .quote-panel--dramatic .jq-text {
-    font-size: 1.12rem;
+    font-size: 1.15rem;
+  }
+
+  .jq-bubble-box {
+    padding: var(--space-md);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+
+  .quote-panel--split {
+    box-shadow: 4px 4px 0 var(--ink);
+  }
+
+  .jq-split-main {
+    padding: var(--space-md);
+  }
+
+  .quote-panel--inverted {
+    padding: var(--space-lg) var(--space-md) var(--space-md);
+    box-shadow: 4px 4px 0 var(--ink-light);
+  }
+
+  .jq-text {
+    font-size: 1.05rem;
   }
 
   .detail-quote-card {
