@@ -70,7 +70,8 @@ function storageLoad() {
           review:       typeof item.review === 'string' ? item.review : '',
           notes:        typeof item.notes === 'string' ? item.notes : '',
           addedAt:      typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
-          updatedAt:    typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now())
+          updatedAt:    typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now()),
+          autoCompleted: item.autoCompleted === true
         };
       });
   } catch (e) {
@@ -757,6 +758,12 @@ function openAddModal() {
   document.getElementById('form-submit').textContent   = 'Save Anime';
   document.getElementById('anime-form').reset();
   document.getElementById('form-id').value = '';
+  // Reset unknown-episodes checkbox and re-enable the input
+  var unknownCb  = document.getElementById('form-episodes-unknown');
+  var episodesEl = document.getElementById('form-episodes');
+  unknownCb.checked      = false;
+  episodesEl.disabled    = false;
+  episodesEl.required    = true;
   clearFormErrors();
   showModal('modal-overlay');
 }
@@ -769,12 +776,19 @@ function openEditModal(animeId) {
   var anime = findAnimeById(animeId);
   if (!anime) return;
 
+  var unknownCb  = document.getElementById('form-episodes-unknown');
+  var episodesEl = document.getElementById('form-episodes');
+  var isUnknown  = anime.totalEps === null;
+
   document.getElementById('modal-title').textContent = 'Edit Anime';
   document.getElementById('form-submit').textContent = 'Save Changes';
   document.getElementById('form-id').value           = anime.id;
   document.getElementById('form-title').value        = anime.title;
   document.getElementById('form-poster').value       = anime.posterUrl || '';
-  document.getElementById('form-episodes').value     = anime.totalEps;
+  unknownCb.checked      = isUnknown;
+  episodesEl.disabled    = isUnknown;
+  episodesEl.required    = !isUnknown;
+  episodesEl.value       = isUnknown ? '' : anime.totalEps;
   document.getElementById('form-watched').value      = anime.watchedEps;
   document.getElementById('form-status').value       = anime.status;
   document.getElementById('form-genre').value        = anime.genre || '';
@@ -789,7 +803,9 @@ function showModal(id) {
 
 function hideModal(id) {
   document.getElementById(id).classList.remove('modal-visible');
-  document.body.classList.remove('modal-open');
+  // Only remove scroll-lock when no other modal is still open
+  var anyVisible = document.querySelector('.modal-overlay.modal-visible');
+  if (!anyVisible) document.body.classList.remove('modal-open');
 }
 
 function clearFormErrors() {
@@ -806,6 +822,7 @@ function validateForm() {
   var valid      = true;
   var currentId  = document.getElementById('form-id').value;
   var title      = document.getElementById('form-title').value.trim();
+  var unknownEps = document.getElementById('form-episodes-unknown').checked;
   var episodes   = parseInt(document.getElementById('form-episodes').value, 10);
   var rawWatched = document.getElementById('form-watched').value.trim();
   var watched    = rawWatched === '' ? 0 : parseInt(rawWatched, 10);
@@ -832,18 +849,21 @@ function validateForm() {
     valid = false;
   }
 
-  if (!episodes || isNaN(episodes) || episodes < 1) {
-    showFieldError('form-episodes', 'error-episodes', 'Enter at least 1 total episode.');
-    valid = false;
-  } else if (episodes > 9999) {
-    showFieldError('form-episodes', 'error-episodes', 'Maximum 9999 episodes allowed.');
-    valid = false;
+  if (!unknownEps) {
+    // Only validate episode count when total is known
+    if (!episodes || isNaN(episodes) || episodes < 1) {
+      showFieldError('form-episodes', 'error-episodes', 'Enter at least 1 total episode, or tick "Unknown / Ongoing".');
+      valid = false;
+    } else if (episodes > 9999) {
+      showFieldError('form-episodes', 'error-episodes', 'Maximum 9999 episodes allowed.');
+      valid = false;
+    }
   }
 
   if (isNaN(watched) || watched < 0) {
     showFieldError('form-watched', 'error-watched', 'Watched episodes cannot be negative.');
     valid = false;
-  } else if (!isNaN(episodes) && watched > episodes) {
+  } else if (!unknownEps && !isNaN(episodes) && watched > episodes) {
     showFieldError('form-watched', 'error-watched', 'Cannot exceed total episodes (' + episodes + ').');
     valid = false;
   }
@@ -852,10 +872,10 @@ function validateForm() {
   if (status === 'plan' && !isNaN(watched) && watched > 0) {
     showFieldError('form-watched', 'error-watched', 'Plan to Watch entries must have 0 watched episodes.');
     valid = false;
-  } else if (status === 'completed' && !isNaN(episodes) && !isNaN(watched) && watched < episodes) {
+  } else if (status === 'completed' && !unknownEps && !isNaN(episodes) && !isNaN(watched) && watched < episodes) {
     showFieldError('form-watched', 'error-watched', 'Completed anime must have all ' + episodes + ' episodes watched.');
     valid = false;
-  } else if (status === 'watching' && !isNaN(episodes) && !isNaN(watched) && watched === episodes) {
+  } else if (status === 'watching' && !unknownEps && !isNaN(episodes) && !isNaN(watched) && watched === episodes) {
     showFieldError('form-status', 'error-status', 'All episodes watched — select Completed instead.');
     valid = false;
   }
@@ -889,6 +909,14 @@ document.getElementById('hero-add-btn').addEventListener('click', openSearchModa
 // Library "+ Add Anime" button -> opens AniList search modal
 document.getElementById('library-add-btn').addEventListener('click', openSearchModal);
 
+// "Unknown / Ongoing" checkbox — toggle episode input requirement
+document.getElementById('form-episodes-unknown').addEventListener('change', function() {
+  var episodesEl = document.getElementById('form-episodes');
+  episodesEl.disabled = this.checked;
+  episodesEl.required = !this.checked;
+  if (this.checked) episodesEl.value = '';
+});
+
 // Modal close / cancel
 document.getElementById('modal-close').addEventListener('click', function() { hideModal('modal-overlay'); });
 document.getElementById('form-cancel').addEventListener('click', function() { hideModal('modal-overlay'); });
@@ -906,45 +934,49 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
   var id       = document.getElementById('form-id').value;
   var title    = document.getElementById('form-title').value.trim();
   var poster   = document.getElementById('form-poster').value.trim();
-  var totalEps = parseInt(document.getElementById('form-episodes').value, 10);
+  var unknownEps = document.getElementById('form-episodes-unknown').checked;
+  var totalEps = unknownEps ? null : parseInt(document.getElementById('form-episodes').value, 10);
   var watched  = parseInt(document.getElementById('form-watched').value, 10) || 0;
   var status   = document.getElementById('form-status').value;
   var genre    = document.getElementById('form-genre').value.trim();
 
-  // Clamp watched to totalEps (status consistency is already validated by validateForm)
-  watched = Math.min(watched, totalEps);
+  // Clamp watched to totalEps only when totalEps is known
+  if (totalEps !== null) watched = Math.min(watched, totalEps);
 
   if (id) {
     // EDIT — update existing entry
     var anime = findAnimeById(id);
     if (anime) {
-      anime.title      = title;
-      anime.posterUrl  = poster;
-      anime.totalEps   = totalEps;
-      anime.watchedEps = watched;
-      anime.status     = status;
-      anime.genre      = genre;
+      anime.title         = title;
+      anime.posterUrl     = poster;
+      anime.totalEps      = totalEps;
+      anime.watchedEps    = watched;
+      anime.status        = status;
+      anime.genre         = genre;
+      // User manually chose the status — clear any auto-complete flag
+      anime.autoCompleted = false;
     }
   } else {
     // ADD — create new manual entry
     var now = Date.now();
     state.library.push({
-      id:           generateId(),
-      anilistId:    null,
-      title:        title,
-      posterUrl:    poster,
-      totalEps:     totalEps,
-      watchedEps:   watched,
-      status:       status,
-      format:       '',
-      releaseYear:  null,
-      airingStatus: '',
-      genre:        genre,
-      rating:       0,
-      review:       '',
-      notes:        '',
-      addedAt:      now,
-      updatedAt:    now
+      id:            generateId(),
+      anilistId:     null,
+      title:         title,
+      posterUrl:     poster,
+      totalEps:      totalEps,
+      watchedEps:    watched,
+      status:        status,
+      format:        '',
+      releaseYear:   null,
+      airingStatus:  '',
+      genre:         genre,
+      rating:        0,
+      review:        '',
+      notes:         '',
+      addedAt:       now,
+      updatedAt:     now,
+      autoCompleted: false
     });
   }
 
@@ -1053,7 +1085,8 @@ document.getElementById('anime-grid').addEventListener('click', function(e) {
 // Close open modals with Escape key
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
-    hideModal('search-modal-overlay');
+    // Use closeSearchModal so debounce/abort cleanup always runs
+    closeSearchModal();
     hideModal('modal-overlay');
     hideModal('confirm-overlay');
   }
@@ -1210,9 +1243,11 @@ function incrementEpisode(animeId) {
 
   anime.watchedEps += 1;
 
-  // Auto-complete only if total is known and anime is not ongoing
+  // Auto-complete only if total is known and anime is not ongoing.
+  // Mark autoCompleted so decrementEpisode can distinguish this from a manual status choice.
   if (anime.totalEps !== null && anime.watchedEps === anime.totalEps && anime.airingStatus !== 'RELEASING') {
-    anime.status = 'completed';
+    anime.status        = 'completed';
+    anime.autoCompleted = true;
   }
 
   stateCommit();
@@ -1230,9 +1265,12 @@ function decrementEpisode(animeId) {
 
   anime.watchedEps -= 1;
 
-  // If status was completed and we go below total (or total is unknown), revert to watching
-  if (anime.status === 'completed' && (anime.totalEps === null || anime.watchedEps < anime.totalEps)) {
-    anime.status = 'watching';
+  // Only revert to Watching if the Completed status was set automatically by incrementEpisode.
+  // If the user manually chose Completed (e.g. mid-series), preserve that choice.
+  if (anime.status === 'completed' && anime.autoCompleted &&
+      (anime.totalEps === null || anime.watchedEps < anime.totalEps)) {
+    anime.status        = 'watching';
+    anime.autoCompleted = false;
   }
 
   stateCommit();
@@ -1312,13 +1350,42 @@ var searchState = {
 
 /** Opens the AniList search modal in Step 1 (search view). */
 function openSearchModal() {
+  // Cancel any in-flight debounce / fetch from a previous session
+  clearTimeout(searchState.debounceTimer);
+  if (searchState.abortCtrl) {
+    searchState.abortCtrl.abort();
+    searchState.abortCtrl = null;
+  }
+
+  // Reset all search state so each open is a clean slate
+  searchState.results       = [];
   searchState.selectedMedia = null;
+  searchState.lastQuery     = '';
+
+  // Reset input field and clear button
+  var inputEl = document.getElementById('anilist-search-input');
+  if (inputEl) inputEl.value = '';
+  var clearEl = document.getElementById('anilist-search-clear');
+  if (clearEl) clearEl.style.display = 'none';
+
+  // Reset results area to initial hint message
+  var resultsEl = document.getElementById('anilist-results-area');
+  if (resultsEl) resultsEl.innerHTML = '<p class="search-state-msg">Type at least 2 characters to search…</p>';
+
+  // Show step 1 (search), hide step 2 (confirm)
   document.getElementById('search-view').style.display         = '';
   document.getElementById('search-confirm-view').style.display = 'none';
   document.getElementById('search-modal-title').textContent    = 'Search Anime Catalogue';
+
+  // Clear any inline validation errors from a previous session
+  var errStatus  = document.getElementById('error-search-status');
+  var errWatched = document.getElementById('error-search-watched');
+  if (errStatus)  errStatus.textContent  = '';
+  if (errWatched) errWatched.textContent = '';
+
   showModal('search-modal-overlay');
   setTimeout(function() {
-    document.getElementById('anilist-search-input').focus();
+    if (inputEl) inputEl.focus();
   }, 50);
 }
 
@@ -1694,22 +1761,23 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
   var genres = Array.isArray(media.genres) ? media.genres.slice(0, 3).join(', ') : '';
 
   state.library.push({
-    id:           generateId(),
-    anilistId:    media.id,
-    title:        getMediaTitle(media),
-    posterUrl:    cover,
-    totalEps:     totalEps,
-    watchedEps:   watched,
-    status:       status,
-    format:       media.format || '',
-    releaseYear:  getMediaYear(media),
-    airingStatus: media.status || '',
-    genre:        genres,
-    rating:       rating,
-    review:       '',
-    notes:        '',
-    addedAt:      now,
-    updatedAt:    now
+    id:            generateId(),
+    anilistId:     media.id,
+    title:         getMediaTitle(media),
+    posterUrl:     cover,
+    totalEps:      totalEps,
+    watchedEps:    watched,
+    status:        status,
+    format:        media.format || '',
+    releaseYear:   getMediaYear(media),
+    airingStatus:  media.status || '',
+    genre:         genres,
+    rating:        rating,
+    review:        '',
+    notes:         '',
+    addedAt:       now,
+    updatedAt:     now,
+    autoCompleted: false
   });
 
   closeSearchModal();
