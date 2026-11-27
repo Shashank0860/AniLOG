@@ -2202,3 +2202,628 @@ body.modal-open {
     text-align: center;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════════
+   19. FAVOURITE QUOTES (DETAILS) & MANGA JOURNAL REDESIGN
+═══════════════════════════════════════════════════════════ */
+
+.btn-xs {
+  padding: 3px 9px;
+  font-size: 0.62rem;
+}
+
+/* ── Details: Favourite Quotes Block ── */
+.quotes-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.quotes-block-header .details-block-title {
+  margin-bottom: 0;
+}
+
+.quotes-count-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: var(--border-mid);
+  background: var(--paper-dark);
+}
+
+.quote-composer {
+  border: var(--border-mid);
+  background: var(--paper-dark);
+  padding: var(--space-md);
+  margin-bottom: var(--space-lg);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.quote-composer-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-sm);
+  color: var(--ink);
+}
+
+.quote-textarea {
+  min-height: 76px;
+  margin-bottom: var(--space-xs);
+}
+
+.quote-meta-row {
+  margin-top: var(--space-sm);
+}
+
+.quote-composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.quotes-empty {
+  border: var(--border-thin);
+  border-style: dashed;
+  background: var(--paper);
+  padding: var(--space-xl) var(--space-lg);
+  text-align: center;
+  color: var(--ink-light);
+}
+
+.quotes-empty-mark {
+  display: block;
+  font-family: var(--font-title);
+  font-size: 3rem;
+  line-height: 0.8;
+  color: var(--ink);
+  opacity: 0.2;
+  margin-bottom: var(--space-xs);
+}
+
+.quotes-empty-sub {
+  font-size: 0.8rem;
+  margin-top: var(--space-xs);
+}
+
+.details-quotes-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.detail-quote-card {
+  position: relative;
+  border: var(--border-mid);
+  background: var(--white);
+  padding: var(--space-md) var(--space-lg);
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.detail-quote-card.is-editing {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+  background: var(--paper-dark);
+}
+
+.detail-quote-mark {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  font-family: var(--font-title);
+  font-size: 2.6rem;
+  line-height: 1;
+  color: var(--ink);
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+.detail-quote-text {
+  position: relative;
+  font-family: var(--font-title);
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  padding-left: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.detail-quote-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: var(--border-thin);
+}
+
+.detail-quote-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.quote-card-speaker {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.quote-card-speaker--muted {
+  color: var(--ink-light);
+  font-weight: 400;
+}
+
+.detail-quote-date {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--ink-light);
+}
+
+.detail-quote-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.legacy-notes-box {
+  margin-top: var(--space-lg);
+  border: var(--border-thin);
+  background: var(--paper);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.legacy-notes-summary {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-light);
+  cursor: pointer;
+}
+
+.legacy-notes-text {
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-mid);
+}
+
+/* ── Journal: Filter Tabs & Redesigned Header ── */
+.journal-filter-tabs {
+  margin-bottom: 0;
+}
+
+.toc-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toc-badge {
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border: var(--border-thin);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+
+.journal-entry {
+  border: var(--border-heavy);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.journal-entry-header {
+  align-items: center;
+}
+
+.journal-poster-wrap {
+  flex-shrink: 0;
+}
+
+.journal-header-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.journal-sub-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: var(--space-sm);
+}
+
+.journal-review-section {
+  padding: var(--space-lg) var(--space-lg) var(--space-lg) calc(var(--space-lg) + 6px);
+  border-bottom: var(--border-thin);
+  background: var(--white);
+}
+
+.journal-review-section .journal-body {
+  padding: 0;
+  border-bottom: none;
+}
+
+.journal-quotes-section {
+  padding: var(--space-lg) var(--space-lg) var(--space-xl) calc(var(--space-lg) + 6px);
+  border-bottom: var(--border-thin);
+  background: var(--paper);
+  /* Subtle manga halftone background */
+  background-image: radial-gradient(rgba(10, 10, 10, 0.08) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+.journal-quotes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+/* ── Manga Quote Panels (4 Monochrome Compositions) ── */
+.quote-panel {
+  margin: 0;
+  position: relative;
+  min-width: 0;
+}
+
+.jq-mark {
+  font-family: var(--font-title);
+  font-weight: 700;
+  line-height: 0.75;
+  user-select: none;
+  pointer-events: none;
+}
+
+.jq-text {
+  font-family: var(--font-title);
+  font-size: 1.15rem;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.jq-attribution {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.jq-speaker {
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+
+.jq-speaker--muted {
+  font-weight: 400;
+  color: var(--ink-light);
+}
+
+.jq-meta-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.jq-anime-title {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+
+.jq-episode {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border: var(--border-thin);
+  background: var(--white);
+  color: var(--ink);
+}
+
+/* Variant 1: Dramatic Full-Width Panel */
+.quote-panel--dramatic {
+  grid-column: 1 / -1;
+  border: var(--border-heavy);
+  background: var(--white);
+  padding: var(--space-xl) var(--space-xl) var(--space-lg);
+  box-shadow: 6px 6px 0 var(--ink);
+  overflow: hidden;
+}
+
+.quote-panel--dramatic::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 72px;
+  height: 72px;
+  background-image: radial-gradient(var(--ink) 1.5px, transparent 1.5px);
+  background-size: 7px 7px;
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+.quote-panel--dramatic .jq-mark {
+  display: block;
+  font-size: 4rem;
+  color: var(--ink);
+  opacity: 0.18;
+  margin-bottom: -12px;
+}
+
+.quote-panel--dramatic .jq-text {
+  font-size: 1.35rem;
+  line-height: 1.5;
+  font-weight: 700;
+  margin-bottom: var(--space-lg);
+}
+
+.quote-panel--dramatic .jq-attribution {
+  padding-top: var(--space-md);
+  border-top: var(--border-mid);
+}
+
+/* Variant 2: Manga Speech-Bubble Panel */
+.quote-panel--bubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.jq-bubble-box {
+  position: relative;
+  background: var(--white);
+  border: var(--border-heavy);
+  border-radius: 18px;
+  padding: var(--space-lg) var(--space-lg) var(--space-md);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.jq-bubble-box .jq-mark {
+  display: block;
+  font-size: 2.6rem;
+  opacity: 0.2;
+  margin-bottom: -8px;
+}
+
+.jq-bubble-box .jq-text {
+  font-size: 1.05rem;
+}
+
+.jq-bubble-tail {
+  position: absolute;
+  bottom: -14px;
+  left: 28px;
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 14px solid var(--ink);
+}
+
+.jq-bubble-tail::after {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: -9px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 12px solid var(--white);
+}
+
+.quote-panel--bubble .jq-attribution {
+  padding-left: var(--space-md);
+}
+
+/* Variant 3: Split Manga Panel */
+.quote-panel--split {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  border: var(--border-heavy);
+  background: var(--white);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.jq-split-main {
+  padding: var(--space-lg);
+  position: relative;
+}
+
+.jq-split-main .jq-mark {
+  display: block;
+  font-size: 3rem;
+  opacity: 0.16;
+  margin-bottom: -10px;
+}
+
+.jq-split-main .jq-text {
+  font-size: 1.15rem;
+}
+
+.jq-split-aside {
+  border-left: var(--border-heavy);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--paper-dark),
+    var(--paper-dark) 4px,
+    var(--white) 4px,
+    var(--white) 8px
+  );
+}
+
+.jq-stamp {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 2px 6px;
+  background: var(--ink);
+  color: var(--white);
+  align-self: flex-start;
+}
+
+.jq-meta-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+
+/* Variant 4: Dark Inverted Panel */
+.quote-panel--inverted {
+  border: var(--border-heavy);
+  background: var(--ink);
+  color: var(--white);
+  padding: var(--space-lg);
+  box-shadow: 5px 5px 0 var(--ink-light);
+  overflow: hidden;
+}
+
+.quote-panel--inverted::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 64px;
+  height: 64px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.25) 1.2px, transparent 1.2px);
+  background-size: 6px 6px;
+  pointer-events: none;
+}
+
+.quote-panel--inverted .jq-mark {
+  display: block;
+  font-size: 3rem;
+  color: var(--white);
+  opacity: 0.25;
+  margin-bottom: -10px;
+}
+
+.quote-panel--inverted .jq-text {
+  color: var(--white);
+  font-size: 1.1rem;
+  margin-bottom: var(--space-md);
+}
+
+.quote-panel--inverted .jq-attribution {
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.quote-panel--inverted .jq-speaker {
+  color: var(--white);
+}
+
+.quote-panel--inverted .jq-speaker--muted,
+.quote-panel--inverted .jq-anime-title {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.quote-panel--inverted .jq-episode {
+  background: var(--white);
+  color: var(--ink);
+  border-color: var(--white);
+}
+
+/* Focus visibility for new interactive elements */
+.detail-quote-edit:focus-visible,
+.detail-quote-delete:focus-visible,
+#journal-filter-tabs .tab-btn:focus-visible,
+.legacy-notes-summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ── Responsive: Tablet & Mobile for Quotes & Journal ── */
+@media (max-width: 900px) {
+  .journal-quotes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-panel--split {
+    grid-template-columns: 1fr;
+  }
+
+  .jq-split-aside {
+    border-left: none;
+    border-top: var(--border-heavy);
+  }
+}
+
+@media (max-width: 600px) {
+  .journal-entry-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .journal-header-main {
+    width: 100%;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .journal-review-section,
+  .journal-quotes-section {
+    padding: var(--space-md);
+  }
+
+  .quote-panel--dramatic {
+    padding: var(--space-lg) var(--space-md) var(--space-md);
+  }
+
+  .quote-panel--dramatic .jq-text {
+    font-size: 1.12rem;
+  }
+
+  .detail-quote-card {
+    padding: var(--space-md);
+  }
+}

@@ -197,7 +197,7 @@
         <h2 class="modal-title" id="confirm-title">Delete Anime</h2>
         <button class="modal-close" id="confirm-close" aria-label="Close">✕</button>
       </div>
-      <p class="confirm-message">Remove <strong id="confirm-anime-name"></strong> from your library? This cannot be undone.</p>
+      <p class="confirm-message" id="confirm-message">Remove <strong id="confirm-anime-name"></strong> from your library? This cannot be undone.</p>
       <div class="form-actions">
         <button class="btn-secondary" id="confirm-cancel">Cancel</button>
         <button class="btn-primary" id="confirm-delete">Delete</button>
@@ -353,10 +353,14 @@
 
       <div class="section-header">
         <div>
-          <p class="section-label">// REFLECTIONS</p>
+          <p class="section-label">// REFLECTIONS &amp; DIALOGUE</p>
           <h2 class="section-title">My Journal</h2>
         </div>
-        <!-- Journal entries are written from the Details section -->
+        <div class="status-tabs journal-filter-tabs" id="journal-filter-tabs" role="tablist" aria-label="Filter journal entries">
+          <button class="tab-btn active" data-journal-filter="all" role="tab" aria-selected="true">All <span class="tab-count" id="jcount-all">0</span></button>
+          <button class="tab-btn" data-journal-filter="reviews" role="tab" aria-selected="false">Reviews <span class="tab-count" id="jcount-reviews">0</span></button>
+          <button class="tab-btn" data-journal-filter="quotes" role="tab" aria-selected="false">Quotes <span class="tab-count" id="jcount-quotes">0</span></button>
+        </div>
       </div>
 
       <div class="journal-layout">

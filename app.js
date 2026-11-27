@@ -33,6 +33,35 @@
 var STORAGE_KEY = 'anilog_library';
 
 /**
+ * Sanitizes a raw quotes array from LocalStorage.
+ * Preserves valid quote objects and assigns defaults for missing metadata.
+ * @param {*} rawQuotes
+ * @returns {Array}
+ */
+function sanitizeQuotes(rawQuotes) {
+  if (!Array.isArray(rawQuotes)) return [];
+  return rawQuotes
+    .filter(function(q) {
+      return q && typeof q === 'object' && typeof q.text === 'string' && q.text.trim() !== '';
+    })
+    .map(function(q) {
+      var epRaw = q.episode;
+      var ep = null;
+      if (epRaw !== null && epRaw !== undefined && epRaw !== '') {
+        var parsedEp = parseInt(epRaw, 10);
+        if (!isNaN(parsedEp) && parsedEp >= 1) ep = parsedEp;
+      }
+      return {
+        id:        String(q.id || generateId()),
+        text:      q.text.trim(),
+        speaker:   typeof q.speaker === 'string' ? q.speaker.trim() : '',
+        episode:   ep,
+        createdAt: typeof q.createdAt === 'number' ? q.createdAt : Date.now()
+      };
+    });
+}
+
+/**
  * Loads the anime array from LocalStorage.
  * Returns an empty array if nothing is stored or data is invalid.
  * @returns {Array}
@@ -71,7 +100,8 @@ function storageLoad() {
           notes:        typeof item.notes === 'string' ? item.notes : '',
           addedAt:      typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
           updatedAt:    typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now()),
-          autoCompleted: item.autoCompleted === true
+          autoCompleted: item.autoCompleted === true,
+          quotes:       sanitizeQuotes(item.quotes)
         };
       });
   } catch (e) {
@@ -105,6 +135,7 @@ var state = {
   searchQuery:    '',
   sortBy:         'added',
   statusFilter:   'all',
+  journalFilter:  'all', // 'all' | 'reviews' | 'quotes'
   currentAnimeId: null  // id of the anime shown in Details
 };
 
@@ -550,7 +581,7 @@ function renderDetails(anime) {
         '<p class="section-label">// ANIME DETAILS</p>' +
         '<h2 class="details-title">' + escapeHtml(anime.title) + '</h2>' +
 
-        /* Episode Progress */
+        /* General — Episode Progress */
         '<div class="details-block">' +
           '<h3 class="details-block-title">Episode Progress</h3>' +
           '<div class="ep-tracker">' +
@@ -570,7 +601,7 @@ function renderDetails(anime) {
           '</div>' +
         '</div>' +
 
-        /* My Rating */
+        /* General — My Rating */
         '<div class="details-block">' +
           '<h3 class="details-block-title">My Rating</h3>' +
           '<div class="rating-widget">' +
@@ -581,19 +612,15 @@ function renderDetails(anime) {
           '</div>' +
         '</div>' +
 
-        /* My Review */
+        /* Section 2 — My Review */
         '<div class="details-block">' +
           '<h3 class="details-block-title">My Review</h3>' +
           '<textarea class="review-textarea" id="detail-review" placeholder="Write your thoughts about this anime..." rows="5">' + escapeHtml(anime.review || '') + '</textarea>' +
           '<button class="btn-primary" id="detail-save-review" data-id="' + anime.id + '">Save Review</button>' +
         '</div>' +
 
-        /* Personal Notes */
-        '<div class="details-block">' +
-          '<h3 class="details-block-title">Personal Notes</h3>' +
-          '<textarea class="review-textarea review-textarea--notes" id="detail-notes" placeholder="Quick notes, reminders, memorable moments..." rows="3">' + escapeHtml(anime.notes || '') + '</textarea>' +
-          '<button class="btn-secondary" id="detail-save-notes" data-id="' + anime.id + '">Save Notes</button>' +
-        '</div>' +
+        /* Section 3 — Favourite Quotes */
+        buildDetailsQuotesSectionHtml(anime) +
       '</div>' +
     '</div>'
   );
@@ -604,62 +631,311 @@ function renderDetails(anime) {
   wireDetailsEvents(anime.id);
 }
 
+var editingQuoteId = null;
+
+/**
+ * Builds the Favourite Quotes section HTML for the anime details page.
+ * @param {Object} anime
+ * @returns {string}
+ */
+function buildDetailsQuotesSectionHtml(anime) {
+  var quotes = Array.isArray(anime.quotes) ? anime.quotes.slice() : [];
+  quotes.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+
+  var editingQuote = null;
+  if (editingQuoteId) {
+    editingQuote = quotes.find(function(q) { return q.id === editingQuoteId; }) || null;
+    if (!editingQuote) editingQuoteId = null;
+  }
+
+  var listHtml;
+  if (quotes.length === 0) {
+    listHtml =
+      '<div class="quotes-empty">' +
+        '<span class="quotes-empty-mark" aria-hidden="true">“</span>' +
+        '<p>No favourite quotes saved yet.</p>' +
+        '<p class="quotes-empty-sub">Capture memorable lines, speeches, or dialogue that stuck with you.</p>' +
+      '</div>';
+  } else {
+    listHtml = '<div class="details-quotes-list" id="detail-quotes-list">' +
+      quotes.map(function(q) {
+        var metaParts = [];
+        if (q.speaker) metaParts.push('<span class="quote-card-speaker">— ' + escapeHtml(q.speaker) + '</span>');
+        if (q.episode !== null && q.episode !== undefined) {
+          metaParts.push('<span class="tag quote-card-ep">EP ' + q.episode + '</span>');
+        }
+        return (
+          '<article class="detail-quote-card' + (editingQuoteId === q.id ? ' is-editing' : '') + '" data-quote-id="' + escapeHtml(q.id) + '">' +
+            '<span class="detail-quote-mark" aria-hidden="true">“</span>' +
+            '<blockquote class="detail-quote-text">' + escapeHtml(q.text) + '</blockquote>' +
+            '<div class="detail-quote-footer">' +
+              '<div class="detail-quote-meta">' +
+                (metaParts.length ? metaParts.join(' ') : '<span class="quote-card-speaker quote-card-speaker--muted">Unattributed</span>') +
+                '<span class="detail-quote-date">' + formatDate(q.createdAt) + '</span>' +
+              '</div>' +
+              '<div class="detail-quote-actions">' +
+                '<button type="button" class="btn-secondary btn-xs detail-quote-edit" data-quote-id="' + escapeHtml(q.id) + '">Edit</button>' +
+                '<button type="button" class="btn-secondary btn-xs detail-quote-delete" data-quote-id="' + escapeHtml(q.id) + '">Delete</button>' +
+              '</div>' +
+            '</div>' +
+          '</article>'
+        );
+      }).join('') +
+    '</div>';
+  }
+
+  var legacyNotesHtml = '';
+  if (anime.notes && anime.notes.trim() !== '') {
+    legacyNotesHtml =
+      '<details class="legacy-notes-box">' +
+        '<summary class="legacy-notes-summary">Legacy Personal Notes (preserved)</summary>' +
+        '<p class="legacy-notes-text">' + escapeHtml(anime.notes) + '</p>' +
+      '</details>';
+  }
+
+  return (
+    '<div class="details-block quotes-block">' +
+      '<div class="quotes-block-header">' +
+        '<h3 class="details-block-title">Favourite Quotes</h3>' +
+        '<span class="quotes-count-badge">' + quotes.length + (quotes.length === 1 ? ' quote' : ' quotes') + '</span>' +
+      '</div>' +
+      '<form class="quote-composer" id="detail-quote-form" novalidate>' +
+        '<div class="quote-composer-label">' + (editingQuote ? 'Editing Saved Quote' : 'Collect a Memorable Line') + '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label" for="quote-text-input">Quote <span class="form-required">*</span></label>' +
+          '<textarea class="review-textarea quote-textarea" id="quote-text-input" rows="3" placeholder="e.g. If you don\'t take risks, you can\'t create a future.">' + (editingQuote ? escapeHtml(editingQuote.text) : '') + '</textarea>' +
+          '<span class="form-error" id="error-quote-text"></span>' +
+        '</div>' +
+        '<div class="form-row quote-meta-row">' +
+          '<div class="form-group">' +
+            '<label class="form-label" for="quote-speaker-input">Character / Speaker <span class="form-hint">(optional)</span></label>' +
+            '<input class="form-input" type="text" id="quote-speaker-input" placeholder="e.g. Monkey D. Luffy" value="' + (editingQuote ? escapeHtml(editingQuote.speaker || '') : '') + '" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label class="form-label" for="quote-episode-input">Episode <span class="form-hint">(optional)</span></label>' +
+            '<input class="form-input" type="number" id="quote-episode-input" min="1" max="9999" placeholder="e.g. 12" value="' + (editingQuote && editingQuote.episode !== null ? editingQuote.episode : '') + '" />' +
+            '<span class="form-error" id="error-quote-episode"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="quote-composer-actions">' +
+          '<button type="submit" class="btn-primary" id="detail-save-quote">' + (editingQuote ? 'Update Quote' : '+ Save Quote') + '</button>' +
+          (editingQuote ? '<button type="button" class="btn-secondary" id="quote-cancel-edit">Cancel Edit</button>' : '') +
+        '</div>' +
+      '</form>' +
+      listHtml +
+      legacyNotesHtml +
+    '</div>'
+  );
+}
+
 /* ── 4.7 Journal ── */
+
+var QUOTE_PANEL_VARIANTS = ['dramatic', 'bubble', 'split', 'inverted'];
+
+function getLatestQuoteTimestamp(anime) {
+  if (!Array.isArray(anime.quotes) || anime.quotes.length === 0) return 0;
+  return anime.quotes.reduce(function(max, q) {
+    return Math.max(max, q.createdAt || 0);
+  }, 0);
+}
+
+/**
+ * Builds one manga-styled quote panel for the Journal.
+ * Cycles through 4 editorial monochrome compositions for visual variety.
+ * @param {Object} quote
+ * @param {Object} anime
+ * @param {number} globalIdx
+ * @returns {string}
+ */
+function buildJournalQuotePanel(quote, anime, globalIdx) {
+  var variant = QUOTE_PANEL_VARIANTS[globalIdx % QUOTE_PANEL_VARIANTS.length];
+  var speakerHtml = quote.speaker
+    ? '<span class="jq-speaker">— ' + escapeHtml(quote.speaker) + '</span>'
+    : '<span class="jq-speaker jq-speaker--muted">— Memorable Line</span>';
+  var episodeHtml = (quote.episode !== null && quote.episode !== undefined)
+    ? '<span class="jq-episode">EP ' + quote.episode + '</span>'
+    : '';
+  var animeTitleHtml = '<span class="jq-anime-title">' + escapeHtml(anime.title) + '</span>';
+
+  if (variant === 'bubble') {
+    return (
+      '<figure class="quote-panel quote-panel--bubble">' +
+        '<div class="jq-bubble-box">' +
+          '<span class="jq-mark" aria-hidden="true">“</span>' +
+          '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
+          '<span class="jq-bubble-tail" aria-hidden="true"></span>' +
+        '</div>' +
+        '<figcaption class="jq-attribution">' +
+          speakerHtml +
+          '<span class="jq-meta-group">' + animeTitleHtml + episodeHtml + '</span>' +
+        '</figcaption>' +
+      '</figure>'
+    );
+  }
+
+  if (variant === 'split') {
+    return (
+      '<figure class="quote-panel quote-panel--split">' +
+        '<div class="jq-split-main">' +
+          '<span class="jq-mark" aria-hidden="true">“</span>' +
+          '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
+        '</div>' +
+        '<figcaption class="jq-split-aside">' +
+          '<div class="jq-stamp">QUOTE // ' + String(globalIdx + 1).padStart(2, '0') + '</div>' +
+          speakerHtml +
+          '<div class="jq-meta-stack">' + animeTitleHtml + episodeHtml + '</div>' +
+        '</figcaption>' +
+      '</figure>'
+    );
+  }
+
+  if (variant === 'inverted') {
+    return (
+      '<figure class="quote-panel quote-panel--inverted">' +
+        '<span class="jq-mark" aria-hidden="true">“</span>' +
+        '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
+        '<figcaption class="jq-attribution">' +
+          speakerHtml +
+          '<span class="jq-meta-group">' + animeTitleHtml + episodeHtml + '</span>' +
+        '</figcaption>' +
+      '</figure>'
+    );
+  }
+
+  // Default: 'dramatic' full-width manga panel
+  return (
+    '<figure class="quote-panel quote-panel--dramatic">' +
+      '<span class="jq-mark" aria-hidden="true">“</span>' +
+      '<blockquote class="jq-text">' + escapeHtml(quote.text) + '</blockquote>' +
+      '<figcaption class="jq-attribution">' +
+        speakerHtml +
+        '<span class="jq-meta-group">' + animeTitleHtml + episodeHtml + '</span>' +
+      '</figcaption>' +
+    '</figure>'
+  );
+}
+
 function renderJournal() {
   var feed    = document.getElementById('journal-feed');
   var tocList = document.getElementById('journal-toc-list');
 
-  // Only anime with a non-empty review appear in the journal
-  var entries = state.library.filter(function(a) { return a.review && a.review.trim() !== ''; });
+  var withReview = state.library.filter(function(a) { return a.review && a.review.trim() !== ''; });
+  var withQuotes = state.library.filter(function(a) { return Array.isArray(a.quotes) && a.quotes.length > 0; });
+  var withEither = state.library.filter(function(a) {
+    return (a.review && a.review.trim() !== '') || (Array.isArray(a.quotes) && a.quotes.length > 0);
+  });
+
+  // Update filter tab counts
+  var elAll = document.getElementById('jcount-all');
+  var elRev = document.getElementById('jcount-reviews');
+  var elQuo = document.getElementById('jcount-quotes');
+  if (elAll) elAll.textContent = withEither.length;
+  if (elRev) elRev.textContent = withReview.length;
+  if (elQuo) elQuo.textContent = withQuotes.length;
+
+  var filter = state.journalFilter || 'all';
+  var entries = filter === 'reviews' ? withReview : (filter === 'quotes' ? withQuotes : withEither);
 
   if (entries.length === 0) {
-    feed.innerHTML    = '<p class="empty-state">No journal entries yet.<br><em>Write a review on any anime\'s detail page to create an entry.</em></p>';
+    var emptyMsg;
+    if (filter === 'reviews') {
+      emptyMsg = 'No reviews written yet.<br><em>Open any anime\'s Details page and write a review in "My Review".</em>';
+    } else if (filter === 'quotes') {
+      emptyMsg = 'No favourite quotes saved yet.<br><em>Open any anime\'s Details page and save memorable lines under "Favourite Quotes".</em>';
+    } else {
+      emptyMsg = 'Your journal archive is empty.<br><em>Write a review or save a favourite quote on any anime\'s Details page to start your archive.</em>';
+    }
+    feed.innerHTML    = '<p class="empty-state">' + emptyMsg + '</p>';
     tocList.innerHTML = '';
     return;
   }
 
-  // Sort by latest review modification date (fallback to addedAt for older entries)
-  entries.sort(function(a, b) {
-    return (b.updatedAt || b.addedAt) - (a.updatedAt || a.addedAt);
+  // Sort by latest activity (review update, quote creation, or addedAt)
+  entries = entries.slice().sort(function(a, b) {
+    var aLatest = Math.max(a.updatedAt || 0, a.addedAt || 0, getLatestQuoteTimestamp(a));
+    var bLatest = Math.max(b.updatedAt || 0, b.addedAt || 0, getLatestQuoteTimestamp(b));
+    return bLatest - aLatest;
   });
 
   tocList.innerHTML = entries.map(function(anime, idx) {
     var num = String(idx + 1).padStart(2, '0');
+    var qCount = Array.isArray(anime.quotes) ? anime.quotes.length : 0;
+    var hasRev = Boolean(anime.review && anime.review.trim() !== '');
+    var badge = (hasRev && qCount > 0) ? 'R+' + qCount + 'Q' : (hasRev ? 'R' : qCount + 'Q');
     return (
       '<li class="toc-item" data-journal-id="' + anime.id + '">' +
-        '<span class="toc-num">' + num + '</span> ' + escapeHtml(anime.title) +
+        '<span class="toc-num">' + num + '</span>' +
+        '<span class="toc-label">' + escapeHtml(anime.title) + '</span>' +
+        '<span class="toc-badge">' + badge + '</span>' +
       '</li>'
     );
   }).join('');
 
+  var globalQuoteIdx = 0;
+
   feed.innerHTML = entries.map(function(anime, idx) {
-    var num   = String(idx + 1).padStart(2, '0');
-    var stars = buildStarSummary(anime.rating);
-    var statusText = anime.status === 'completed' ? '✓ Completed' : '📺 Still Watching';
-    var entryDate  = anime.updatedAt || anime.addedAt;
+    var num        = String(idx + 1).padStart(2, '0');
+    var stars      = buildStarSummary(anime.rating);
+    var entryDate  = Math.max(anime.updatedAt || 0, anime.addedAt || 0, getLatestQuoteTimestamp(anime));
+    var hasReview  = Boolean(anime.review && anime.review.trim() !== '');
+    var quotes     = Array.isArray(anime.quotes) ? anime.quotes.slice() : [];
+    quotes.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+
+    var showReview = hasReview && (filter === 'all' || filter === 'reviews');
+    var showQuotes = quotes.length > 0 && (filter === 'all' || filter === 'quotes');
+
+    var reviewHtml = '';
+    if (showReview) {
+      reviewHtml =
+        '<section class="journal-review-section">' +
+          '<div class="journal-sub-label">// MY REVIEW</div>' +
+          '<div class="journal-body">' +
+            '<p>' + escapeHtml(anime.review).replace(/\n/g, '<br>') + '</p>' +
+          '</div>' +
+        '</section>';
+    }
+
+    var quotesHtml = '';
+    if (showQuotes) {
+      var panelsHtml = quotes.map(function(q) {
+        var html = buildJournalQuotePanel(q, anime, globalQuoteIdx);
+        globalQuoteIdx++;
+        return html;
+      }).join('');
+
+      quotesHtml =
+        '<section class="journal-quotes-section">' +
+          '<div class="journal-sub-label">// FAVOURITE QUOTES (' + quotes.length + ')</div>' +
+          '<div class="journal-quotes-grid">' + panelsHtml + '</div>' +
+        '</section>';
+    }
 
     return (
       '<article class="journal-entry" id="journal-entry-' + anime.id + '">' +
         '<div class="journal-entry-header">' +
-          '<div class="journal-meta">' +
-            '<span class="journal-num">[ ' + num + ' ]</span>' +
-            '<div>' +
-              '<h3 class="journal-entry-title">' + escapeHtml(anime.title) + '</h3>' +
-              '<span class="journal-date">' + formatDate(entryDate) + '</span>' +
+          '<div class="journal-poster-wrap">' + buildPosterHtml(anime, 'poster-sm') + '</div>' +
+          '<div class="journal-header-main">' +
+            '<div class="journal-meta">' +
+              '<span class="journal-num">[ ' + num + ' ]</span>' +
+              '<div>' +
+                '<h3 class="journal-entry-title">' + escapeHtml(anime.title) + '</h3>' +
+                '<span class="journal-date">' + formatDate(entryDate) + '</span>' +
+              '</div>' +
             '</div>' +
+            '<div class="journal-rating">' + stars + '</div>' +
           '</div>' +
-          '<div class="journal-rating">' + stars + '</div>' +
         '</div>' +
         '<div class="journal-tags">' +
+          '<span class="tag status-tag-' + anime.status + '">' + statusLabel(anime.status) + '</span>' +
           (anime.genre ? '<span class="tag">' + escapeHtml(anime.genre) + '</span>' : '') +
-          '<span class="tag">' + statusLabel(anime.status) + '</span>' +
           '<span class="tag">EP ' + anime.watchedEps + '/' + formatTotalEps(anime) + '</span>' +
         '</div>' +
-        '<div class="journal-body">' +
-          '<p>' + escapeHtml(anime.review).replace(/\n/g, '<br>') + '</p>' +
-        '</div>' +
+        reviewHtml +
+        quotesHtml +
         '<div class="journal-footer">' +
-          '<span class="journal-status">' + statusText + '</span>' +
+          '<span class="journal-status">' +
+            (hasReview ? 'Review ✓' : 'No review') + ' · ' + quotes.length + (quotes.length === 1 ? ' Quote' : ' Quotes') +
+          '</span>' +
           '<div class="journal-actions">' +
             '<button class="btn-secondary btn-sm journal-view-btn" data-id="' + anime.id + '">View Details</button>' +
           '</div>' +
@@ -688,6 +964,7 @@ function navigateTo(sectionId, updateHash) {
   if (VALID_SECTIONS.indexOf(sectionId) === -1) {
     sectionId = 'dashboard';
   }
+  if (sectionId !== 'details') editingQuoteId = null;
 
   // Ensure #details has a helpful message if opened directly with no anime selected
   if (sectionId === 'details' && !state.currentAnimeId) {
@@ -976,7 +1253,8 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
       notes:         '',
       addedAt:       now,
       updatedAt:     now,
-      autoCompleted: false
+      autoCompleted: false,
+      quotes:        []
     });
   }
 
@@ -985,26 +1263,69 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
 });
 
 
-/* ── 5.3 Delete Modal ── */
+/* ── 5.3 Delete Modal (Anime & Quotes) ── */
 
-var pendingDeleteId = null; // holds id of anime awaiting deletion
+var pendingDeleteId    = null; // holds id of anime awaiting deletion
+var pendingDeleteQuote = null; // holds { animeId, quoteId } when deleting a quote
 
 function openDeleteConfirm(animeId) {
   var anime = findAnimeById(animeId);
   if (!anime) return;
-  pendingDeleteId = animeId;
-  document.getElementById('confirm-anime-name').textContent = anime.title;
+  pendingDeleteId    = animeId;
+  pendingDeleteQuote = null;
+  document.getElementById('confirm-title').textContent = 'Delete Anime';
+  document.getElementById('confirm-message').innerHTML =
+    'Remove <strong>' + escapeHtml(anime.title) + '</strong> from your library? This cannot be undone.';
   showModal('confirm-overlay');
 }
 
-document.getElementById('confirm-close').addEventListener('click', function() { hideModal('confirm-overlay'); });
-document.getElementById('confirm-cancel').addEventListener('click', function() { hideModal('confirm-overlay'); });
+function openDeleteQuoteConfirm(animeId, quoteId) {
+  var anime = findAnimeById(animeId);
+  if (!anime || !Array.isArray(anime.quotes)) return;
+  var quote = anime.quotes.find(function(q) { return q.id === quoteId; });
+  if (!quote) return;
+  pendingDeleteId    = null;
+  pendingDeleteQuote = { animeId: animeId, quoteId: quoteId };
+  document.getElementById('confirm-title').textContent = 'Delete Quote';
+  var preview = quote.text.length > 60 ? quote.text.slice(0, 60) + '…' : quote.text;
+  document.getElementById('confirm-message').innerHTML =
+    'Remove quote "<strong>' + escapeHtml(preview) + '</strong>" from ' + escapeHtml(anime.title) + '?';
+  showModal('confirm-overlay');
+}
+
+document.getElementById('confirm-close').addEventListener('click', function() {
+  pendingDeleteId = null;
+  pendingDeleteQuote = null;
+  hideModal('confirm-overlay');
+});
+document.getElementById('confirm-cancel').addEventListener('click', function() {
+  pendingDeleteId = null;
+  pendingDeleteQuote = null;
+  hideModal('confirm-overlay');
+});
 
 document.getElementById('confirm-overlay').addEventListener('click', function(e) {
-  if (e.target === this) hideModal('confirm-overlay');
+  if (e.target === this) {
+    pendingDeleteId = null;
+    pendingDeleteQuote = null;
+    hideModal('confirm-overlay');
+  }
 });
 
 document.getElementById('confirm-delete').addEventListener('click', function() {
+  if (pendingDeleteQuote) {
+    var targetAnime = findAnimeById(pendingDeleteQuote.animeId);
+    var targetQuoteId = pendingDeleteQuote.quoteId;
+    pendingDeleteQuote = null;
+    hideModal('confirm-overlay');
+    if (targetAnime && Array.isArray(targetAnime.quotes)) {
+      targetAnime.quotes = targetAnime.quotes.filter(function(q) { return q.id !== targetQuoteId; });
+      if (editingQuoteId === targetQuoteId) editingQuoteId = null;
+      stateCommit();
+    }
+    return;
+  }
+
   if (!pendingDeleteId) return;
   // Remove the anime from the array
   state.library = state.library.filter(function(a) { return a.id !== pendingDeleteId; });
@@ -1156,15 +1477,105 @@ function wireDetailsEvents(animeId) {
     if (freshBtn) flashSaved(freshBtn, 'Saved!');
   });
 
-  // Save notes (query freshly rendered button after stateCommit)
-  document.getElementById('detail-save-notes').addEventListener('click', function() {
-    var anime = findAnimeById(animeId);
-    if (!anime) return;
-    anime.notes = document.getElementById('detail-notes').value;
-    stateCommit();
-    var freshBtn = document.getElementById('detail-save-notes');
-    if (freshBtn) flashSaved(freshBtn, 'Saved!');
-  });
+  // Favourite Quotes — Add / Update quote form
+  var quoteForm = document.getElementById('detail-quote-form');
+  if (quoteForm) {
+    quoteForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var anime = findAnimeById(animeId);
+      if (!anime) return;
+      if (!Array.isArray(anime.quotes)) anime.quotes = [];
+
+      var textEl    = document.getElementById('quote-text-input');
+      var speakerEl = document.getElementById('quote-speaker-input');
+      var epEl      = document.getElementById('quote-episode-input');
+      var errText   = document.getElementById('error-quote-text');
+      var errEp     = document.getElementById('error-quote-episode');
+
+      errText.textContent = '';
+      errEp.textContent   = '';
+      textEl.classList.remove('input-error');
+      epEl.classList.remove('input-error');
+
+      var text    = textEl.value.trim();
+      var speaker = speakerEl.value.trim();
+      var rawEp   = epEl.value.trim();
+      var episode = null;
+      var valid   = true;
+
+      if (!text) {
+        errText.textContent = 'Quote text is required.';
+        textEl.classList.add('input-error');
+        valid = false;
+      }
+
+      if (rawEp !== '') {
+        var parsedEp = parseInt(rawEp, 10);
+        if (isNaN(parsedEp) || parsedEp < 1 || parsedEp > 9999) {
+          errEp.textContent = 'Episode must be between 1 and 9999.';
+          epEl.classList.add('input-error');
+          valid = false;
+        } else {
+          episode = parsedEp;
+        }
+      }
+
+      if (!valid) return;
+
+      if (editingQuoteId) {
+        var target = anime.quotes.find(function(q) { return q.id === editingQuoteId; });
+        if (target) {
+          target.text    = text;
+          target.speaker = speaker;
+          target.episode = episode;
+        }
+        editingQuoteId = null;
+      } else {
+        anime.quotes.push({
+          id:        generateId(),
+          text:      text,
+          speaker:   speaker,
+          episode:   episode,
+          createdAt: Date.now()
+        });
+      }
+
+      anime.updatedAt = Date.now();
+      stateCommit();
+    });
+  }
+
+  // Cancel editing a quote
+  var cancelQuoteBtn = document.getElementById('quote-cancel-edit');
+  if (cancelQuoteBtn) {
+    cancelQuoteBtn.addEventListener('click', function() {
+      editingQuoteId = null;
+      var anime = findAnimeById(animeId);
+      if (anime) renderDetails(anime);
+    });
+  }
+
+  // Edit / Delete individual quote buttons (delegated on quotes list)
+  var quotesListEl = document.getElementById('detail-quotes-list');
+  if (quotesListEl) {
+    quotesListEl.addEventListener('click', function(e) {
+      var editBtn = e.target.closest('.detail-quote-edit');
+      if (editBtn) {
+        editingQuoteId = editBtn.dataset.quoteId;
+        var anime = findAnimeById(animeId);
+        if (anime) {
+          renderDetails(anime);
+          var input = document.getElementById('quote-text-input');
+          if (input) input.focus();
+        }
+        return;
+      }
+      var delBtn = e.target.closest('.detail-quote-delete');
+      if (delBtn) {
+        openDeleteQuoteConfirm(animeId, delBtn.dataset.quoteId);
+      }
+    });
+  }
 
   // Rating stars (mouse + keyboard accessible)
   var starsContainer = document.getElementById('detail-rating-stars');
@@ -1292,7 +1703,21 @@ function flashSaved(btn, message) {
 }
 
 
-/* ── 5.8 Journal — TOC click & View Details button ── */
+/* ── 5.8 Journal — Filter tabs, TOC click & View Details button ── */
+
+// Filter tabs: All / Reviews / Quotes
+document.getElementById('journal-filter-tabs').addEventListener('click', function(e) {
+  var btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  var filter = btn.dataset.journalFilter || 'all';
+  state.journalFilter = filter;
+  document.querySelectorAll('#journal-filter-tabs .tab-btn').forEach(function(b) {
+    var active = b.dataset.journalFilter === filter;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  renderJournal();
+});
 
 // Delegated on the TOC list
 document.getElementById('journal-toc-list').addEventListener('click', function(e) {
@@ -1777,7 +2202,8 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
     notes:         '',
     addedAt:       now,
     updatedAt:     now,
-    autoCompleted: false
+    autoCompleted: false,
+    quotes:        []
   });
 
   closeSearchModal();

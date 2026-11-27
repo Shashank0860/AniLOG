@@ -43,6 +43,29 @@ function generateId() {
   return String(Date.now()) + Math.random().toString(36).slice(2, 7);
 }
 
+function sanitizeQuotes(rawQuotes) {
+  if (!Array.isArray(rawQuotes)) return [];
+  return rawQuotes
+    .filter(function(q) {
+      return q && typeof q === 'object' && typeof q.text === 'string' && q.text.trim() !== '';
+    })
+    .map(function(q) {
+      var epRaw = q.episode;
+      var ep = null;
+      if (epRaw !== null && epRaw !== undefined && epRaw !== '') {
+        var parsedEp = parseInt(epRaw, 10);
+        if (!isNaN(parsedEp) && parsedEp >= 1) ep = parsedEp;
+      }
+      return {
+        id:        String(q.id || generateId()),
+        text:      q.text.trim(),
+        speaker:   typeof q.speaker === 'string' ? q.speaker.trim() : '',
+        episode:   ep,
+        createdAt: typeof q.createdAt === 'number' ? q.createdAt : Date.now()
+      };
+    });
+}
+
 function storageLoad() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
@@ -76,7 +99,8 @@ function storageLoad() {
           notes:         typeof item.notes === 'string' ? item.notes : '',
           addedAt:       typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
           updatedAt:     typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now()),
-          autoCompleted: item.autoCompleted === true
+          autoCompleted: item.autoCompleted === true,
+          quotes:        sanitizeQuotes(item.quotes)
         };
       });
   } catch (e) {
@@ -363,6 +387,55 @@ describe('LocalStorage round-trip', function() {
   assert(loaded[0].watchedEps === 7, 'watchedEps survives round-trip');
   assert(loaded[0].airingStatus === 'RELEASING', 'airingStatus survives round-trip');
   assert(loaded[0].autoCompleted === false, 'autoCompleted false survives round-trip');
+});
+
+describe('Quotes migration & sanitization', function() {
+  _store = {};
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([
+    {
+      id: 'legacy-1',
+      title: 'Cowboy Bebop',
+      totalEps: 26,
+      watchedEps: 26,
+      status: 'completed',
+      rating: 10,
+      review: 'Classic.',
+      notes: 'Watch the movie next!'
+    }
+  ]));
+  var migrated = storageLoad();
+  assert(migrated.length === 1, 'legacy record preserved');
+  assert(Array.isArray(migrated[0].quotes) && migrated[0].quotes.length === 0, 'missing quotes becomes empty array (notes NOT converted to quotes)');
+  assert(migrated[0].notes === 'Watch the movie next!', 'legacy notes preserved');
+  assert(migrated[0].review === 'Classic.', 'existing review preserved');
+
+  var sanitized = sanitizeQuotes([
+    null,
+    { text: '' },
+    { text: '   ' },
+    { id: 'q1', text: '  Believe it!  ', speaker: '  Naruto  ', episode: '12', createdAt: 5000 },
+    { id: 'q2', text: 'Line 1\nLine 2', speaker: '', episode: null, createdAt: 9000 },
+    { text: 'Bad ep', episode: -3 }
+  ]);
+  assert(sanitized.length === 3, 'filters invalid/empty quote entries');
+  assert(sanitized[0].text === 'Believe it!' && sanitized[0].speaker === 'Naruto' && sanitized[0].episode === 12, 'trims text/speaker and parses episode');
+  assert(sanitized[1].episode === null, 'preserves null episode');
+  assert(sanitized[2].episode === null, 'rejects negative episode');
+});
+
+describe('Journal filtering logic', function() {
+  var sample = [
+    { id: '1', title: 'Review Only', review: 'Great show', quotes: [] },
+    { id: '2', title: 'Quotes Only', review: '', quotes: [{ id: 'q1', text: 'Quote!', createdAt: 100 }] },
+    { id: '3', title: 'Both', review: 'Amazing', quotes: [{ id: 'q2', text: 'Another', createdAt: 200 }] },
+    { id: '4', title: 'Neither', review: '   ', quotes: [] }
+  ];
+  var hasRev = function(a) { return Boolean(a.review && a.review.trim() !== ''); };
+  var hasQuo = function(a) { return Array.isArray(a.quotes) && a.quotes.length > 0; };
+
+  assert(sample.filter(function(a) { return hasRev(a) || hasQuo(a); }).length === 3, 'All filter excludes entries with neither review nor quotes');
+  assert(sample.filter(hasRev).length === 2, 'Reviews filter includes Review Only and Both');
+  assert(sample.filter(hasQuo).length === 2, 'Quotes filter includes Quotes Only and Both');
 });
 
 /* ─── Summary ─── */
