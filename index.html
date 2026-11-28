@@ -86,6 +86,10 @@
             <div class="form-group" id="search-watched-group">
               <label class="form-label" for="search-add-watched">Episodes Watched</label>
               <input class="form-input" type="number" id="search-add-watched" min="0" max="9999" value="0" />
+              <label class="form-checkbox-label" id="search-unknown-row" style="display:none;margin-top:6px;align-items:center;gap:6px;font-size:0.82rem;color:var(--ink-light);">
+                <input type="checkbox" id="search-episodes-unknown" checked disabled style="accent-color:var(--ink);" />
+                Unknown / Ongoing (no fixed total)
+              </label>
               <span class="form-error" id="error-search-watched"></span>
             </div>
           </div>

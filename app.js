@@ -1824,8 +1824,9 @@ var ANILIST_ENDPOINT = 'https://graphql.anilist.co';
 var ANILIST_QUERY = [
   'query ($search: String, $page: Int, $perPage: Int) {',
   '  Page(page: $page, perPage: $perPage) {',
-  '    media(search: $search, type: ANIME, sort: SEARCH_MATCH) {',
+  '    media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) {',
   '      id',
+  '      isAdult',
   '      title { romaji english }',
   '      coverImage { large medium }',
   '      format',
@@ -1957,7 +1958,7 @@ function fetchAniListSearch(query) {
         throw new Error(json.errors[0].message || 'API_ERROR');
       }
       var mediaList = (json.data && json.data.Page && Array.isArray(json.data.Page.media))
-        ? json.data.Page.media
+        ? json.data.Page.media.filter(function(m) { return !m.isAdult; })
         : [];
       searchState.results = mediaList;
       renderSearchResults(mediaList, query);
@@ -2090,6 +2091,11 @@ function selectSearchResult(mediaId) {
   watchedEl.max   = totalEps !== null ? String(totalEps) : '9999';
   ratingEl.value  = '0';
 
+  var unknownRow = document.getElementById('search-unknown-row');
+  if (unknownRow) {
+    unknownRow.style.display = (!isMovie && totalEps === null) ? 'flex' : 'none';
+  }
+
   if (isMovie) {
     watchedLabel.textContent = 'Watched (0 = No, 1 = Yes)';
   } else {
@@ -2100,7 +2106,7 @@ function selectSearchResult(mediaId) {
   saveBtn.textContent = existing ? 'Already Added' : 'Add to Library';
 }
 
-// Search input with 400ms debounce
+// Search input with 350ms debounce
 document.getElementById('anilist-search-input').addEventListener('input', function() {
   var q = this.value.trim();
   var clearBtn = document.getElementById('anilist-search-clear');
@@ -2116,7 +2122,7 @@ document.getElementById('anilist-search-input').addEventListener('input', functi
 
   searchState.debounceTimer = setTimeout(function() {
     fetchAniListSearch(q);
-  }, 400);
+  }, 350);
 });
 
 // Immediate search on Enter
@@ -2183,10 +2189,14 @@ document.getElementById('search-modal-overlay').addEventListener('click', functi
   if (e.target === this) closeSearchModal();
 });
 
-// Switch to manual entry modal
+// Switch to manual entry modal (preserve typed search title if any)
 document.getElementById('open-manual-add-btn').addEventListener('click', function() {
+  var typedQuery = (document.getElementById('anilist-search-input').value || '').trim();
   closeSearchModal();
   openAddModal();
+  if (typedQuery) {
+    document.getElementById('form-title').value = typedQuery;
+  }
 });
 
 // Auto-sync watched episodes helper when user picks Completed on a known-length anime/movie
