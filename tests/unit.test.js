@@ -126,6 +126,161 @@ function storageSave(library) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, library: library }));
 }
 
+var ACTIVITY_STORAGE_KEY = 'anilog_activity';
+var ACTIVITY_SCHEMA_VERSION = 1;
+
+function toLocalDateKey(timestamp) {
+  var d = new Date(timestamp);
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function sanitizeWatchEvents(rawEvents) {
+  if (!Array.isArray(rawEvents)) return [];
+  var seenIds = {};
+  var result = [];
+
+  for (var i = 0; i < rawEvents.length; i++) {
+    var ev = rawEvents[i];
+    if (!ev || typeof ev !== 'object') continue;
+    if (typeof ev.title !== 'string' || !ev.title.trim()) continue;
+
+    var ts = (typeof ev.timestamp === 'number' && !isNaN(ev.timestamp)) ? ev.timestamp : null;
+    if (ts === null) continue;
+
+    var episodes = Math.max(1, Math.floor(Number(ev.episodes) || 0));
+    var prevEp = Math.max(0, Math.floor(Number(ev.prevEp) || 0));
+    var newEp = Math.max(prevEp + 1, Math.floor(Number(ev.newEp) || (prevEp + episodes)));
+    episodes = newEp - prevEp;
+
+    var id = (typeof ev.id === 'string' && ev.id.trim()) ? ev.id.trim() : generateId();
+    if (seenIds[id]) continue;
+    seenIds[id] = true;
+
+    var poster = (typeof ev.posterUrl === 'string' && isValidUrl(ev.posterUrl)) ? ev.posterUrl : '';
+    var localDate = (typeof ev.localDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.localDate))
+      ? ev.localDate
+      : toLocalDateKey(ts);
+
+    result.push({
+      id:        id,
+      animeId:   typeof ev.animeId === 'string' ? ev.animeId : String(ev.animeId || ''),
+      title:     ev.title.trim(),
+      posterUrl: poster,
+      episodes:  episodes,
+      prevEp:    prevEp,
+      newEp:     newEp,
+      timestamp: ts,
+      localDate: localDate,
+      demo:      ev.demo === true
+    });
+  }
+  return result;
+}
+
+function sanitizeCompletionEvents(rawEvents) {
+  if (!Array.isArray(rawEvents)) return [];
+  var seenIds = {};
+  var result = [];
+
+  for (var i = 0; i < rawEvents.length; i++) {
+    var ev = rawEvents[i];
+    if (!ev || typeof ev !== 'object') continue;
+    if (typeof ev.title !== 'string' || !ev.title.trim()) continue;
+
+    var ts = (typeof ev.timestamp === 'number' && !isNaN(ev.timestamp)) ? ev.timestamp : null;
+    if (ts === null) continue;
+
+    var id = (typeof ev.id === 'string' && ev.id.trim()) ? ev.id.trim() : generateId();
+    if (seenIds[id]) continue;
+    seenIds[id] = true;
+
+    var poster = (typeof ev.posterUrl === 'string' && isValidUrl(ev.posterUrl)) ? ev.posterUrl : '';
+    var localDate = (typeof ev.localDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.localDate))
+      ? ev.localDate
+      : toLocalDateKey(ts);
+
+    result.push({
+      id:        id,
+      animeId:   typeof ev.animeId === 'string' ? ev.animeId : String(ev.animeId || ''),
+      title:     ev.title.trim(),
+      posterUrl: poster,
+      format:    typeof ev.format === 'string' ? ev.format : '',
+      timestamp: ts,
+      localDate: localDate,
+      demo:      ev.demo === true
+    });
+  }
+  return result;
+}
+
+function activityLoad() {
+  var raw = null;
+  try {
+    raw = localStorage.getItem(ACTIVITY_STORAGE_KEY);
+    if (!raw) return { schemaVersion: ACTIVITY_SCHEMA_VERSION, watchEvents: [], completionEvents: [] };
+    var parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return { schemaVersion: ACTIVITY_SCHEMA_VERSION, watchEvents: sanitizeWatchEvents(parsed), completionEvents: [] };
+    }
+    if (parsed && typeof parsed === 'object') {
+      return {
+        schemaVersion: ACTIVITY_SCHEMA_VERSION,
+        watchEvents: sanitizeWatchEvents(parsed.watchEvents),
+        completionEvents: sanitizeCompletionEvents(parsed.completionEvents)
+      };
+    }
+    return { schemaVersion: ACTIVITY_SCHEMA_VERSION, watchEvents: [], completionEvents: [] };
+  } catch (e) {
+    if (raw) localStorage.setItem(ACTIVITY_STORAGE_KEY + ':corrupt-backup', raw);
+    return { schemaVersion: ACTIVITY_SCHEMA_VERSION, watchEvents: [], completionEvents: [] };
+  }
+}
+
+function activitySave(activity) {
+  try {
+    var payload = {
+      schemaVersion: ACTIVITY_SCHEMA_VERSION,
+      watchEvents: (activity && Array.isArray(activity.watchEvents)) ? activity.watchEvents : [],
+      completionEvents: (activity && Array.isArray(activity.completionEvents)) ? activity.completionEvents : []
+    };
+    localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {}
+}
+
+function getStartOfWeek(d) {
+  var date = new Date(d);
+  var day = date.getDay();
+  var diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function filterEventsByPeriod(events, filter) {
+  if (filter === 'all') return events.slice();
+  var now = new Date();
+  var currentYear = now.getFullYear();
+  var currentMonth = now.getMonth();
+  var startOfWeek = getStartOfWeek(now);
+
+  return events.filter(function(ev) {
+    var d = new Date(ev.timestamp);
+    if (filter === 'week') {
+      return ev.timestamp >= startOfWeek;
+    }
+    if (filter === 'month') {
+      return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    }
+    if (filter === 'year') {
+      return d.getFullYear() === currentYear;
+    }
+    return true;
+  });
+}
+
 function getProgress(entry) {
   var watched = Math.max(0, Math.floor(Number(entry && entry.watchedEps) || 0));
   var total = (entry && typeof entry.totalEps === 'number' && entry.totalEps > 0) ? entry.totalEps : null;
@@ -504,6 +659,201 @@ describe('Journal filtering logic', function() {
   assert(sample.filter(function(a) { return hasRev(a) || hasQuo(a); }).length === 3, 'All filter excludes entries with neither review nor quotes');
   assert(sample.filter(hasRev).length === 2, 'Reviews filter includes Review Only and Both');
   assert(sample.filter(hasQuo).length === 2, 'Quotes filter includes Quotes Only and Both');
+});
+
+describe('toLocalDateKey', function() {
+  var ts = new Date(2026, 2, 15).getTime(); // March 15, 2026
+  assert(toLocalDateKey(ts) === '2026-03-15', 'formats date as YYYY-MM-DD');
+
+  var tsJan = new Date(2026, 0, 5).getTime(); // Jan 5, 2026
+  assert(toLocalDateKey(tsJan) === '2026-01-05', 'pads single digit month and day with zero');
+});
+
+describe('sanitizeWatchEvents', function() {
+  assert(sanitizeWatchEvents(null).length === 0, 'null input returns empty array');
+  assert(sanitizeWatchEvents('not-an-array').length === 0, 'string input returns empty array');
+
+  var valid = [
+    {
+      id: 'w1',
+      animeId: 'a1',
+      title: 'Frieren',
+      posterUrl: 'https://example.com/poster.jpg',
+      episodes: 2,
+      prevEp: 5,
+      newEp: 7,
+      timestamp: 1700000000000,
+      localDate: '2023-11-14'
+    }
+  ];
+  var s1 = sanitizeWatchEvents(valid);
+  assert(s1.length === 1, 'loads valid watch event');
+  assert(s1[0].episodes === 2, 'preserves episode diff count');
+  assert(s1[0].prevEp === 5 && s1[0].newEp === 7, 'preserves prevEp and newEp');
+
+  // Filters missing title or invalid timestamp
+  var invalid = [
+    { id: 'inv1', title: '', timestamp: 1700000000000 },
+    { id: 'inv2', title: 'Test', timestamp: 'not-a-number' },
+    { id: 'inv3', title: '   ', timestamp: 1700000000000 }
+  ];
+  assert(sanitizeWatchEvents(invalid).length === 0, 'filters entries with blank title or invalid timestamp');
+
+  // Deduplication by id
+  var dupes = [
+    { id: 'same', title: 'Show 1', episodes: 1, prevEp: 0, newEp: 1, timestamp: 1000 },
+    { id: 'same', title: 'Show 1 dup', episodes: 2, prevEp: 1, newEp: 3, timestamp: 2000 }
+  ];
+  assert(sanitizeWatchEvents(dupes).length === 1, 'deduplicates watch events by id');
+
+  // Reject unsafe javascript: URLs
+  var unsafePoster = [{ id: 'w2', title: 'X', posterUrl: 'javascript:alert(1)', timestamp: 1000 }];
+  assert(sanitizeWatchEvents(unsafePoster)[0].posterUrl === '', 'rejects unsafe poster url');
+});
+
+describe('sanitizeCompletionEvents', function() {
+  assert(sanitizeCompletionEvents(null).length === 0, 'null returns empty array');
+
+  var valid = [
+    {
+      id: 'c1',
+      animeId: 'a1',
+      title: 'Steins;Gate',
+      posterUrl: 'https://example.com/sg.jpg',
+      format: 'TV',
+      timestamp: 1700000000000,
+      localDate: '2023-11-14'
+    }
+  ];
+  var s = sanitizeCompletionEvents(valid);
+  assert(s.length === 1, 'loads valid completion event');
+  assert(s[0].format === 'TV', 'preserves format');
+
+  var dupes = [
+    { id: 'c-dupe', title: 'Show', timestamp: 1000 },
+    { id: 'c-dupe', title: 'Show', timestamp: 2000 }
+  ];
+  assert(sanitizeCompletionEvents(dupes).length === 1, 'deduplicates completion events by id');
+});
+
+describe('activityLoad & activitySave', function() {
+  localStorage.removeItem(ACTIVITY_STORAGE_KEY);
+  var empty = activityLoad();
+  assert(empty.watchEvents.length === 0 && empty.completionEvents.length === 0, 'empty storage returns empty events');
+
+  var testAct = {
+    schemaVersion: 1,
+    watchEvents: [
+      { id: 'w1', animeId: 'a1', title: 'Test Anime', posterUrl: '', episodes: 3, prevEp: 0, newEp: 3, timestamp: 5000, localDate: '2026-03-01' }
+    ],
+    completionEvents: [
+      { id: 'c1', animeId: 'a1', title: 'Test Anime', posterUrl: '', format: 'TV', timestamp: 5000, localDate: '2026-03-01' }
+    ]
+  };
+  activitySave(testAct);
+  var loaded = activityLoad();
+  assert(loaded.watchEvents.length === 1, 'round-trips watch events');
+  assert(loaded.completionEvents.length === 1, 'round-trips completion events');
+  assert(loaded.watchEvents[0].episodes === 3, 'watch event episode count preserved');
+
+  // Corrupt JSON handling
+  localStorage.setItem(ACTIVITY_STORAGE_KEY, '{ invalid json');
+  var fallback = activityLoad();
+  assert(fallback.watchEvents.length === 0, 'corrupt JSON recovers to empty events');
+  assert(localStorage.getItem(ACTIVITY_STORAGE_KEY + ':corrupt-backup') === '{ invalid json', 'backs up corrupt activity data');
+});
+
+describe('Watch activity recording conditions', function() {
+  var recorded = [];
+  function mockRecord(prevEp, newEp) {
+    if (newEp > prevEp) {
+      recorded.push({ episodes: newEp - prevEp, prevEp: prevEp, newEp: newEp });
+    }
+  }
+
+  mockRecord(5, 6);
+  assert(recorded.length === 1 && recorded[0].episodes === 1, 'records 1 episode when progress increases from 5 to 6');
+
+  mockRecord(5, 9);
+  assert(recorded.length === 2 && recorded[1].episodes === 4, 'records 4 episodes when progress increases from 5 to 9');
+
+  mockRecord(9, 8);
+  assert(recorded.length === 2, 'does not record watch activity when progress decreases');
+
+  mockRecord(8, 8);
+  assert(recorded.length === 2, 'does not record watch activity when progress is unchanged');
+});
+
+describe('Timeline period filtering logic', function() {
+  var now = Date.now();
+  var day = 86400000;
+  var events = [
+    { id: 'e1', title: 'Today', timestamp: now, episodes: 1 },
+    { id: 'e2', title: '3 days ago', timestamp: now - 3 * day, episodes: 2 },
+    { id: 'e3', title: '60 days ago', timestamp: now - 60 * day, episodes: 3 },
+    { id: 'e4', title: '400 days ago', timestamp: now - 400 * day, episodes: 4 }
+  ];
+
+  var all = filterEventsByPeriod(events, 'all');
+  assert(all.length === 4, 'all filter returns all events');
+
+  var week = filterEventsByPeriod(events, 'week');
+  assert(week.length >= 1 && week[0].id === 'e1', 'week filter includes current week');
+
+  var year = filterEventsByPeriod(events, 'year');
+  assert(year.some(function(e) { return e.id === 'e1'; }), 'year filter includes recent event');
+  assert(!year.some(function(e) { return e.id === 'e4'; }), 'year filter excludes event from prior year');
+});
+
+describe('Personal Rating Insights calculation', function() {
+  var lib = [
+    { id: '1', title: 'Top Show', rating: 10 },
+    { id: '2', title: 'Good Show', rating: 8 },
+    { id: '3', title: 'Average Show', rating: 6 },
+    { id: '4', title: 'Unrated 1', rating: null },
+    { id: '5', title: 'Unrated 2', rating: undefined }
+  ];
+
+  var rated = lib.filter(function(a) { return a.rating !== null && a.rating !== undefined && a.rating >= 1; });
+  assert(rated.length === 3, 'excludes unrated anime (null/undefined)');
+
+  var sum = rated.reduce(function(acc, a) { return acc + a.rating; }, 0);
+  var avg = (sum / rated.length).toFixed(1);
+  assert(avg === '8.0', 'calculates accurate average score (24 / 3 = 8.0)');
+
+  var highest = rated[0];
+  var lowest = rated[0];
+  rated.forEach(function(a) {
+    if (a.rating > highest.rating) highest = a;
+    if (a.rating < lowest.rating) lowest = a;
+  });
+  assert(highest.title === 'Top Show' && highest.rating === 10, 'identifies highest rated anime');
+  assert(lowest.title === 'Average Show' && lowest.rating === 6, 'identifies lowest rated anime');
+});
+
+describe('Year in Review metrics aggregation', function() {
+  var testYear = 2026;
+  var watchEvents = [
+    { animeId: 'frieren', title: 'Frieren', episodes: 4, timestamp: new Date(2026, 1, 10).getTime() },
+    { animeId: 'frieren', title: 'Frieren', episodes: 6, timestamp: new Date(2026, 2, 15).getTime() },
+    { animeId: 'dungeon', title: 'Dungeon', episodes: 3, timestamp: new Date(2026, 2, 20).getTime() },
+    { animeId: 'old', title: 'Old Show', episodes: 12, timestamp: new Date(2025, 5, 1).getTime() } // prior year
+  ];
+
+  var yearEvents = watchEvents.filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === testYear;
+  });
+  assert(yearEvents.length === 3, 'filters events to target year only');
+
+  var totalEps = yearEvents.reduce(function(sum, ev) { return sum + ev.episodes; }, 0);
+  assert(totalEps === 13, 'calculates correct total episodes for year (4 + 6 + 3 = 13)');
+
+  var animeTotals = {};
+  yearEvents.forEach(function(ev) {
+    animeTotals[ev.animeId] = (animeTotals[ev.animeId] || 0) + ev.episodes;
+  });
+  assert(animeTotals['frieren'] === 10, 'correctly sums episodes for top anime');
+  assert(animeTotals['dungeon'] === 3, 'correctly sums episodes for other anime');
 });
 
 /* ─── Summary ─── */

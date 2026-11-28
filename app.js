@@ -1377,6 +1377,960 @@ function renderJournal() {
 
 
 /* ═══════════════════════════════════════════════════════════
+   4.5 WATCH ACTIVITY & INSIGHTS RENDERERS
+═══════════════════════════════════════════════════════════ */
+
+function formatTimelineDateLabel(dateKey) {
+  var now = new Date();
+  var todayKey = toLocalDateKey(now.getTime());
+  var yest = new Date(now.getTime() - 86400000);
+  var yesterdayKey = toLocalDateKey(yest.getTime());
+
+  if (dateKey === todayKey) return 'Today';
+  if (dateKey === yesterdayKey) return 'Yesterday';
+
+  var parts = String(dateKey || '').split('-');
+  if (parts.length === 3) {
+    var year = parseInt(parts[0], 10);
+    var monthIndex = parseInt(parts[1], 10) - 1;
+    var day = parseInt(parts[2], 10);
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return (months[monthIndex] || '') + ' ' + day + ', ' + year;
+  }
+  return dateKey;
+}
+
+function getStartOfWeek(d) {
+  var date = new Date(d);
+  var day = date.getDay(); // 0 is Sunday
+  var diff = date.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function filterEventsByPeriod(events, filter) {
+  if (filter === 'all') return events.slice();
+  var now = new Date();
+  var currentYear = now.getFullYear();
+  var currentMonth = now.getMonth();
+  var startOfWeek = getStartOfWeek(now);
+
+  return events.filter(function(ev) {
+    var d = new Date(ev.timestamp);
+    if (filter === 'week') {
+      return ev.timestamp >= startOfWeek;
+    }
+    if (filter === 'month') {
+      return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    }
+    if (filter === 'year') {
+      return d.getFullYear() === currentYear;
+    }
+    return true;
+  });
+}
+
+function renderInsights() {
+  var content = document.getElementById('insights-content');
+  if (!content) return;
+
+  var tabButtons = document.querySelectorAll('#insights-tabs .tab-btn');
+  tabButtons.forEach(function(btn) {
+    var tab = btn.getAttribute('data-insights-tab');
+    var isActive = tab === state.insightsTab;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+
+  if (state.insightsTab === 'timeline') {
+    renderTimeline(content);
+  } else if (state.insightsTab === 'recap') {
+    renderRecap(content);
+  } else {
+    renderOverview(content);
+  }
+}
+
+function renderTimeline(container) {
+  var events = state.activity.watchEvents || [];
+  var filtered = filterEventsByPeriod(events, state.timelineFilter || 'all');
+  var totalMatching = filtered.length;
+  var visibleEvents = filtered.slice(0, state.timelineLimit || 20);
+
+  var filterHtml =
+    '<div class="timeline-toolbar">' +
+      '<div class="timeline-filters status-tabs" role="tablist" aria-label="Timeline filters">' +
+        '<button type="button" class="tab-btn ' + (state.timelineFilter === 'all' ? 'active' : '') + '" data-tfilter="all">All Activity (' + events.length + ')</button>' +
+        '<button type="button" class="tab-btn ' + (state.timelineFilter === 'week' ? 'active' : '') + '" data-tfilter="week">This Week</button>' +
+        '<button type="button" class="tab-btn ' + (state.timelineFilter === 'month' ? 'active' : '') + '" data-tfilter="month">This Month</button>' +
+        '<button type="button" class="tab-btn ' + (state.timelineFilter === 'year' ? 'active' : '') + '" data-tfilter="year">This Year</button>' +
+      '</div>' +
+    '</div>';
+
+  if (filtered.length === 0) {
+    container.innerHTML = filterHtml +
+      '<div class="empty-state">' +
+        '<p>' + (events.length === 0
+          ? 'No watch activity recorded yet.<br><em>Activity is recorded automatically whenever you increase your episode progress.</em>'
+          : 'No activity recorded for this period.<br><em>Try selecting "All Activity" above.</em>') +
+        '</p>' +
+      '</div>';
+    return;
+  }
+
+  var groups = [];
+  var groupMap = {};
+  visibleEvents.forEach(function(ev) {
+    var dk = ev.localDate || toLocalDateKey(ev.timestamp);
+    if (!groupMap[dk]) {
+      groupMap[dk] = { dateKey: dk, events: [], totalEps: 0 };
+      groups.push(groupMap[dk]);
+    }
+    groupMap[dk].events.push(ev);
+    groupMap[dk].totalEps += (ev.episodes || 0);
+  });
+
+  var groupsHtml = groups.map(function(grp) {
+    var itemsHtml = grp.events.map(function(ev) {
+      var animeInLib = findAnimeById(ev.animeId);
+      var posterHtml = buildPosterHtml(ev.posterUrl, ev.title, 'timeline-poster-img');
+      var titleHtml = animeInLib
+        ? '<a href="#details/' + encodeURIComponent(ev.animeId) + '" class="timeline-title-link" data-nav-details="' + escapeHtml(ev.animeId) + '">' + escapeHtml(ev.title) + '</a>'
+        : '<span class="timeline-title-archived">' + escapeHtml(ev.title) + ' <span class="badge-archived">[Archived]</span></span>';
+
+      var timeStr = '';
+      try {
+        var d = new Date(ev.timestamp);
+        timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch (err) {
+        timeStr = '';
+      }
+
+      var epNoun = ev.episodes === 1 ? 'episode' : 'episodes';
+
+      return (
+        '<div class="timeline-item">' +
+          '<div class="timeline-poster-wrap">' + posterHtml + '</div>' +
+          '<div class="timeline-body">' +
+            '<div class="timeline-header-row">' +
+              titleHtml +
+              '<span class="timeline-time">' + escapeHtml(timeStr) + '</span>' +
+            '</div>' +
+            '<div class="timeline-meta-row">' +
+              '<span class="timeline-ep-badge">Watched ' + ev.episodes + ' ' + epNoun + '</span>' +
+              '<span class="timeline-progress-diff">EP ' + ev.prevEp + ' → ' + ev.newEp + '</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    var label = formatTimelineDateLabel(grp.dateKey);
+    var dayEpNoun = grp.totalEps === 1 ? 'ep' : 'eps';
+    return (
+      '<div class="timeline-day-group">' +
+        '<div class="timeline-day-header">' +
+          '<h3 class="timeline-day-title">' + label + '</h3>' +
+          '<span class="timeline-day-count">' + grp.totalEps + ' ' + dayEpNoun + '</span>' +
+        '</div>' +
+        '<div class="timeline-day-items">' + itemsHtml + '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  var hasMore = totalMatching > (state.timelineLimit || 20);
+  var remaining = totalMatching - (state.timelineLimit || 20);
+  var loadMoreHtml = hasMore
+    ? '<div class="timeline-load-more">' +
+        '<button type="button" class="btn-secondary" id="timeline-load-more-btn">Load More (' + remaining + ' remaining)</button>' +
+      '</div>'
+    : '';
+
+  container.innerHTML = filterHtml + '<div class="timeline-list">' + groupsHtml + '</div>' + loadMoreHtml;
+}
+
+function renderOverview(container) {
+  var watchEvents = state.activity.watchEvents || [];
+  var compEvents = state.activity.completionEvents || [];
+  var now = new Date();
+  var nowTs = now.getTime();
+  var todayKey = toLocalDateKey(nowTs);
+  var startOfWeek = getStartOfWeek(now);
+  var currentYear = now.getFullYear();
+  var currentMonth = now.getMonth();
+
+  var epsToday = 0;
+  var epsWeek = 0;
+  var epsMonth = 0;
+  var epsYear = 0;
+  var epsTotal = 0;
+
+  watchEvents.forEach(function(ev) {
+    var eps = ev.episodes || 0;
+    epsTotal += eps;
+    if (ev.localDate === todayKey) epsToday += eps;
+    if (ev.timestamp >= startOfWeek) epsWeek += eps;
+    var d = new Date(ev.timestamp);
+    if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) epsMonth += eps;
+    if (d.getFullYear() === currentYear) epsYear += eps;
+  });
+
+  var earliestNote = 'Activity tracked from implementation date onward';
+  if (watchEvents.length > 0) {
+    var earliestTs = watchEvents[watchEvents.length - 1].timestamp;
+    var dEarliest = new Date(earliestTs);
+    earliestNote = 'Activity tracked since ' + dEarliest.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  var statsStripHtml =
+    '<div class="stats-strip insights-stats-strip">' +
+      '<div class="stat-block"><span class="stat-number">' + epsToday + '</span><span class="stat-label">Today</span></div>' +
+      '<div class="stat-divider"></div>' +
+      '<div class="stat-block"><span class="stat-number">' + epsWeek + '</span><span class="stat-label">This Week</span></div>' +
+      '<div class="stat-divider"></div>' +
+      '<div class="stat-block"><span class="stat-number">' + epsMonth + '</span><span class="stat-label">This Month</span></div>' +
+      '<div class="stat-divider"></div>' +
+      '<div class="stat-block"><span class="stat-number">' + epsYear + '</span><span class="stat-label">This Year</span></div>' +
+      '<div class="stat-divider"></div>' +
+      '<div class="stat-block"><span class="stat-number">' + epsTotal + '</span><span class="stat-label">All Time</span></div>' +
+    '</div>' +
+    '<div class="insights-tracking-note">' + escapeHtml(earliestNote) + '</div>';
+
+  var chartHtml = buildActivityChartHtml(watchEvents, state.chartPeriod || 'daily');
+  var genreFormatHtml = buildGenreAndFormatHtml(watchEvents);
+  var ratingHtml = buildRatingInsightsHtml(state.library);
+  var completedHtml = buildCompletedOverTimeHtml(compEvents, state.library);
+
+  container.innerHTML =
+    '<div class="insights-overview-layout">' +
+      statsStripHtml +
+      chartHtml +
+      '<div class="insights-dual-grid">' +
+        genreFormatHtml +
+        ratingHtml +
+      '</div>' +
+      completedHtml +
+    '</div>';
+}
+
+function buildActivityChartHtml(watchEvents, period) {
+  var buckets = [];
+  var now = new Date();
+
+  if (period === 'daily') {
+    for (var i = 13; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      var key = toLocalDateKey(d.getTime());
+      var dayName = (i === 0) ? 'Today' : (d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]);
+      buckets.push({ key: key, label: dayName, count: 0 });
+    }
+    watchEvents.forEach(function(ev) {
+      var k = ev.localDate || toLocalDateKey(ev.timestamp);
+      for (var b = 0; b < buckets.length; b++) {
+        if (buckets[b].key === k) {
+          buckets[b].count += (ev.episodes || 0);
+          break;
+        }
+      }
+    });
+  } else if (period === 'weekly') {
+    for (var w = 7; w >= 0; w--) {
+      var endDay = new Date(now.getTime() - w * 7 * 86400000);
+      var startDay = new Date(endDay.getTime() - 6 * 86400000);
+      var startTs = new Date(startDay.getFullYear(), startDay.getMonth(), startDay.getDate(), 0, 0, 0).getTime();
+      var endTs = new Date(endDay.getFullYear(), endDay.getMonth(), endDay.getDate(), 23, 59, 59).getTime();
+      var wLabel = (w === 0) ? 'This Wk' : (['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][startDay.getMonth()] + ' ' + startDay.getDate());
+      buckets.push({ startTs: startTs, endTs: endTs, label: wLabel, count: 0 });
+    }
+    watchEvents.forEach(function(ev) {
+      for (var b = 0; b < buckets.length; b++) {
+        if (ev.timestamp >= buckets[b].startTs && ev.timestamp <= buckets[b].endTs) {
+          buckets[b].count += (ev.episodes || 0);
+          break;
+        }
+      }
+    });
+  } else if (period === 'monthly') {
+    for (var m = 11; m >= 0; m--) {
+      var dm = new Date(now.getFullYear(), now.getMonth() - m, 1);
+      var y = dm.getFullYear();
+      var mon = dm.getMonth();
+      var mLabel = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mon] + (m >= 6 ? "'" + String(y).slice(2) : '');
+      buckets.push({ year: y, month: mon, label: mLabel, count: 0 });
+    }
+    watchEvents.forEach(function(ev) {
+      var d = new Date(ev.timestamp);
+      var ey = d.getFullYear();
+      var em = d.getMonth();
+      for (var b = 0; b < buckets.length; b++) {
+        if (buckets[b].year === ey && buckets[b].month === em) {
+          buckets[b].count += (ev.episodes || 0);
+          break;
+        }
+      }
+    });
+  } else {
+    var currentY = now.getFullYear();
+    var years = [currentY - 2, currentY - 1, currentY];
+    years.forEach(function(yr) {
+      buckets.push({ year: yr, label: String(yr), count: 0 });
+    });
+    watchEvents.forEach(function(ev) {
+      var ey = new Date(ev.timestamp).getFullYear();
+      for (var b = 0; b < buckets.length; b++) {
+        if (buckets[b].year === ey) {
+          buckets[b].count += (ev.episodes || 0);
+          break;
+        }
+      }
+    });
+  }
+
+  var maxCount = 0;
+  buckets.forEach(function(b) { if (b.count > maxCount) maxCount = b.count; });
+  if (maxCount === 0) maxCount = 1;
+
+  var barsHtml = buckets.map(function(b) {
+    var pct = Math.round((b.count / maxCount) * 100);
+    var heightStyle = b.count > 0 ? ('height: ' + Math.max(pct, 6) + '%;') : 'height: 2px; opacity: 0.3;';
+    return (
+      '<div class="chart-col" title="' + b.label + ': ' + b.count + ' eps">' +
+        '<span class="chart-val">' + (b.count > 0 ? b.count : '') + '</span>' +
+        '<div class="chart-bar-wrap">' +
+          '<div class="chart-bar ' + (b.count > 0 ? 'active' : 'zero') + '" style="' + heightStyle + '"></div>' +
+        '</div>' +
+        '<span class="chart-label">' + escapeHtml(b.label) + '</span>' +
+      '</div>'
+    );
+  }).join('');
+
+  return (
+    '<div class="insights-panel chart-panel">' +
+      '<div class="panel-header-row">' +
+        '<h3 class="panel-heading">// EPISODES WATCHED ACTIVITY</h3>' +
+        '<div class="chart-period-tabs status-tabs" role="tablist" aria-label="Chart time period">' +
+          '<button type="button" class="tab-btn ' + (period === 'daily' ? 'active' : '') + '" data-chart-period="daily">Daily</button>' +
+          '<button type="button" class="tab-btn ' + (period === 'weekly' ? 'active' : '') + '" data-chart-period="weekly">Weekly</button>' +
+          '<button type="button" class="tab-btn ' + (period === 'monthly' ? 'active' : '') + '" data-chart-period="monthly">Monthly</button>' +
+          '<button type="button" class="tab-btn ' + (period === 'yearly' ? 'active' : '') + '" data-chart-period="yearly">Yearly</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="chart-container">' + barsHtml + '</div>' +
+    '</div>'
+  );
+}
+
+function buildGenreAndFormatHtml(watchEvents) {
+  var genreCounts = {};
+  var formatCounts = {};
+  var totalEps = 0;
+
+  watchEvents.forEach(function(ev) {
+    var eps = ev.episodes || 0;
+    totalEps += eps;
+    var anime = findAnimeById(ev.animeId);
+    var genreStr = (anime && anime.genre) ? anime.genre : '';
+    if (genreStr) {
+      var parts = genreStr.split(',');
+      parts.forEach(function(p) {
+        var g = p.trim();
+        if (g) genreCounts[g] = (genreCounts[g] || 0) + eps;
+      });
+    }
+
+    var fmt = (anime && anime.format) ? anime.format : (ev.format || 'Unknown');
+    fmt = fmt.toUpperCase().trim();
+    if (!fmt) fmt = 'OTHER';
+    formatCounts[fmt] = (formatCounts[fmt] || 0) + eps;
+  });
+
+  var sortedGenres = Object.keys(genreCounts).map(function(k) {
+    return { name: k, count: genreCounts[k] };
+  }).sort(function(a, b) { return b.count - a.count; }).slice(0, 7);
+
+  var maxGenreCount = sortedGenres.length > 0 ? sortedGenres[0].count : 1;
+
+  var genreBarsHtml = sortedGenres.length === 0
+    ? '<p class="empty-inline">No genre watch activity recorded yet.</p>'
+    : sortedGenres.map(function(g) {
+        var pct = Math.round((g.count / maxGenreCount) * 100);
+        return (
+          '<div class="metric-row">' +
+            '<div class="metric-label-row">' +
+              '<span class="metric-name">' + escapeHtml(g.name) + '</span>' +
+              '<span class="metric-val">' + g.count + ' eps</span>' +
+            '</div>' +
+            '<div class="metric-bar-bg">' +
+              '<div class="metric-bar-fill" style="width: ' + pct + '%;"></div>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+  var sortedFormats = Object.keys(formatCounts).map(function(k) {
+    return { name: k, count: formatCounts[k] };
+  }).sort(function(a, b) { return b.count - a.count; });
+
+  var formatBarsHtml = sortedFormats.length === 0
+    ? '<p class="empty-inline">No format watch activity recorded yet.</p>'
+    : sortedFormats.map(function(f) {
+        var pct = totalEps > 0 ? Math.round((f.count / totalEps) * 100) : 0;
+        return (
+          '<div class="metric-row">' +
+            '<div class="metric-label-row">' +
+              '<span class="metric-name">' + escapeHtml(f.name) + '</span>' +
+              '<span class="metric-val">' + f.count + ' eps (' + pct + '%)</span>' +
+            '</div>' +
+            '<div class="metric-bar-bg">' +
+              '<div class="metric-bar-fill" style="width: ' + pct + '%;"></div>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+  return (
+    '<div class="insights-panel">' +
+      '<h3 class="panel-heading">// GENRE &amp; FORMAT INSIGHTS</h3>' +
+      '<div class="insights-subheading">Top Genres Watched</div>' +
+      '<div class="metric-list">' + genreBarsHtml + '</div>' +
+      '<p class="insights-footnote">Anime can have multiple genres; genre counts reflect episodes watched per genre tag.</p>' +
+      '<div class="insights-subheading" style="margin-top: var(--space-xl);">Format Breakdown</div>' +
+      '<div class="metric-list">' + formatBarsHtml + '</div>' +
+    '</div>'
+  );
+}
+
+function buildRatingInsightsHtml(library) {
+  var rated = library.filter(function(a) {
+    return a.rating !== null && a.rating !== undefined && a.rating >= 1 && a.rating <= 10;
+  });
+
+  if (rated.length === 0) {
+    return (
+      '<div class="insights-panel">' +
+        '<h3 class="panel-heading">// PERSONAL RATING INSIGHTS</h3>' +
+        '<p class="empty-inline">No anime rated yet in your library. Rate anime from 1 to 10 in their details page to unlock score insights.</p>' +
+      '</div>'
+    );
+  }
+
+  var sum = 0;
+  var highest = rated[0];
+  var lowest = rated[0];
+  var distribution = [0,0,0,0,0,0,0,0,0,0];
+
+  rated.forEach(function(a) {
+    sum += a.rating;
+    if (a.rating > highest.rating) highest = a;
+    if (a.rating < lowest.rating) lowest = a;
+    var idx = Math.min(Math.max(Math.round(a.rating) - 1, 0), 9);
+    distribution[idx]++;
+  });
+
+  var avg = (sum / rated.length).toFixed(1);
+  var maxDist = Math.max.apply(null, distribution);
+  if (maxDist === 0) maxDist = 1;
+
+  var distBarsHtml = distribution.map(function(cnt, i) {
+    var score = i + 1;
+    var pct = Math.round((cnt / maxDist) * 100);
+    return (
+      '<div class="dist-row">' +
+        '<span class="dist-score">★ ' + score + '</span>' +
+        '<div class="dist-bar-wrap">' +
+          '<div class="dist-bar-fill" style="width: ' + pct + '%;"></div>' +
+        '</div>' +
+        '<span class="dist-count">' + cnt + '</span>' +
+      '</div>'
+    );
+  }).reverse().join('');
+
+  return (
+    '<div class="insights-panel">' +
+      '<h3 class="panel-heading">// PERSONAL RATING INSIGHTS</h3>' +
+      '<div class="rating-highlight-strip">' +
+        '<div class="rating-stat-box">' +
+          '<span class="rating-stat-num">' + avg + '</span>' +
+          '<span class="rating-stat-lbl">Average Score (' + rated.length + ' rated)</span>' +
+        '</div>' +
+        '<div class="rating-high-low">' +
+          '<div class="high-low-row">' +
+            '<span class="hl-badge">Highest</span>' +
+            '<span class="hl-title">' + escapeHtml(highest.title) + '</span>' +
+            '<span class="hl-rating">★ ' + highest.rating + '</span>' +
+          '</div>' +
+          '<div class="high-low-row">' +
+            '<span class="hl-badge hl-badge-low">Lowest</span>' +
+            '<span class="hl-title">' + escapeHtml(lowest.title) + '</span>' +
+            '<span class="hl-rating">★ ' + lowest.rating + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="insights-subheading" style="margin-top: var(--space-lg);">Score Distribution</div>' +
+      '<div class="dist-list">' + distBarsHtml + '</div>' +
+    '</div>'
+  );
+}
+
+function buildCompletedOverTimeHtml(completionEvents, library) {
+  var recordedCount = completionEvents.length;
+
+  var unrecordedCount = library.filter(function(a) {
+    if (a.status !== 'completed') return false;
+    return !completionEvents.some(function(c) { return c.animeId === a.id; });
+  }).length;
+
+  var recentItems = completionEvents.slice(0, 6);
+
+  var itemsHtml = recentItems.length === 0
+    ? '<p class="empty-inline">No completion events recorded yet. Complete an anime to see it logged here.</p>'
+    : recentItems.map(function(c) {
+        var posterHtml = buildPosterHtml(c.posterUrl, c.title, 'completed-thumb-img');
+        var dStr = formatTimelineDateLabel(c.localDate);
+        return (
+          '<div class="completed-card">' +
+            '<div class="completed-poster">' + posterHtml + '</div>' +
+            '<div class="completed-info">' +
+              '<h4 class="completed-title">' + escapeHtml(c.title) + '</h4>' +
+              '<span class="completed-date">Finished ' + escapeHtml(dStr) + '</span>' +
+              (c.format ? '<span class="tag tag-sm">' + escapeHtml(c.format) + '</span>' : '') +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+  var unrecordedNotice = unrecordedCount > 0
+    ? '<div class="completed-unrecorded-notice">' +
+        '<em>Note: ' + unrecordedCount + ' anime in your library were marked Completed before activity tracking was enabled.</em>' +
+      '</div>'
+    : '';
+
+  return (
+    '<div class="insights-panel completed-panel">' +
+      '<div class="panel-header-row">' +
+        '<h3 class="panel-heading">// COMPLETED ANIME OVER TIME</h3>' +
+        '<span class="completed-total-badge">' + recordedCount + ' Completed Recorded</span>' +
+      '</div>' +
+      '<div class="completed-grid">' + itemsHtml + '</div>' +
+      unrecordedNotice +
+    '</div>'
+  );
+}
+
+function renderRecap(container) {
+  var watchEvents = state.activity.watchEvents || [];
+  var compEvents = state.activity.completionEvents || [];
+  var currentYear = new Date().getFullYear();
+
+  var yearsSet = {};
+  yearsSet[currentYear] = true;
+  watchEvents.forEach(function(ev) {
+    var y = new Date(ev.timestamp).getFullYear();
+    if (!isNaN(y)) yearsSet[y] = true;
+  });
+  compEvents.forEach(function(ev) {
+    var y = new Date(ev.timestamp).getFullYear();
+    if (!isNaN(y)) yearsSet[y] = true;
+  });
+
+  var years = Object.keys(yearsSet).map(function(y) { return parseInt(y, 10); }).sort(function(a, b) { return b - a; });
+  var selectedYear = state.recapYear || currentYear;
+
+  var yearSelectHtml =
+    '<div class="recap-header-bar">' +
+      '<div class="recap-brand">' +
+        '<span class="recap-logo">[ ANILOG ]</span>' +
+        '<span class="recap-subtitle">ANNUAL ARCHIVE RECAP</span>' +
+      '</div>' +
+      '<div class="recap-year-picker">' +
+        '<label for="recap-year-select" class="recap-picker-label">Select Year:</label>' +
+        '<select id="recap-year-select" class="recap-select">' +
+          years.map(function(y) {
+            return '<option value="' + y + '"' + (y === selectedYear ? ' selected' : '') + '>' + y + '</option>';
+          }).join('') +
+        '</select>' +
+      '</div>' +
+    '</div>';
+
+  var yearWatch = watchEvents.filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === selectedYear;
+  });
+  var yearComp = compEvents.filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === selectedYear;
+  });
+
+  if (yearWatch.length === 0 && yearComp.length === 0) {
+    container.innerHTML =
+      yearSelectHtml +
+      '<div class="empty-state recap-empty">' +
+        '<p>No recorded activity for ' + selectedYear + '.<br><em>Watch and track anime this year to generate your Year in Review archive!</em></p>' +
+      '</div>';
+    return;
+  }
+
+  var totalEps = 0;
+  var animeMap = {};
+  var monthCounts = [0,0,0,0,0,0,0,0,0,0,0,0];
+  var genreCounts = {};
+
+  yearWatch.forEach(function(ev) {
+    var eps = ev.episodes || 0;
+    totalEps += eps;
+
+    if (!animeMap[ev.animeId]) {
+      animeMap[ev.animeId] = { animeId: ev.animeId, title: ev.title, posterUrl: ev.posterUrl, episodes: 0 };
+    }
+    animeMap[ev.animeId].episodes += eps;
+
+    var m = new Date(ev.timestamp).getMonth();
+    if (m >= 0 && m <= 11) monthCounts[m] += eps;
+
+    var anime = findAnimeById(ev.animeId);
+    if (anime && anime.genre) {
+      anime.genre.split(',').forEach(function(g) {
+        var clean = g.trim();
+        if (clean) genreCounts[clean] = (genreCounts[clean] || 0) + eps;
+      });
+    }
+  });
+
+  var uniqueAnimeCount = Object.keys(animeMap).length;
+  var completedCount = yearComp.length;
+
+  var topAnime = null;
+  Object.keys(animeMap).forEach(function(id) {
+    var item = animeMap[id];
+    if (!topAnime || item.episodes > topAnime.episodes) {
+      topAnime = item;
+    }
+  });
+
+  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var maxMonthIdx = 0;
+  var maxMonthVal = 0;
+  monthCounts.forEach(function(cnt, idx) {
+    if (cnt > maxMonthVal) {
+      maxMonthVal = cnt;
+      maxMonthIdx = idx;
+    }
+  });
+  var mostActiveMonth = maxMonthVal > 0 ? monthNames[maxMonthIdx] : 'None';
+
+  var topGenre = 'None';
+  var maxGenreVal = 0;
+  Object.keys(genreCounts).forEach(function(g) {
+    if (genreCounts[g] > maxGenreVal) {
+      maxGenreVal = genreCounts[g];
+      topGenre = g;
+    }
+  });
+
+  var maxM = Math.max.apply(null, monthCounts);
+  if (maxM === 0) maxM = 1;
+  var monthBarsHtml = monthCounts.map(function(cnt, idx) {
+    var pct = Math.round((cnt / maxM) * 100);
+    var shortName = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][idx];
+    return (
+      '<div class="chart-col" title="' + monthNames[idx] + ': ' + cnt + ' eps">' +
+        '<span class="chart-val">' + (cnt > 0 ? cnt : '') + '</span>' +
+        '<div class="chart-bar-wrap">' +
+          '<div class="chart-bar ' + (cnt > 0 ? 'active' : 'zero') + '" style="' + (cnt > 0 ? ('height: ' + Math.max(pct, 6) + '%;') : 'height: 2px; opacity: 0.3;') + '"></div>' +
+        '</div>' +
+        '<span class="chart-label">' + shortName + '</span>' +
+      '</div>'
+    );
+  }).join('');
+
+  var topAnimeHtml = topAnime
+    ? '<div class="recap-spotlight-card">' +
+        '<div class="spotlight-poster-wrap">' + buildPosterHtml(topAnime.posterUrl, topAnime.title, 'spotlight-poster') + '</div>' +
+        '<div class="spotlight-info">' +
+          '<span class="spotlight-badge">★ #1 MOST WATCHED IN ' + selectedYear + '</span>' +
+          '<h3 class="spotlight-title">' + escapeHtml(topAnime.title) + '</h3>' +
+          '<p class="spotlight-stats">' + topAnime.episodes + ' episodes watched</p>' +
+        '</div>' +
+      '</div>'
+    : '';
+
+  container.innerHTML =
+    yearSelectHtml +
+    '<div class="recap-content-wrap" id="recap-card-node">' +
+      '<div class="recap-banner">' +
+        '<h2 class="recap-banner-title">' + selectedYear + ' YEAR IN REVIEW</h2>' +
+        '<p class="recap-banner-tagline">"Stories experienced, episodes logged, journey chronicled."</p>' +
+      '</div>' +
+      '<div class="stats-strip recap-stats-strip">' +
+        '<div class="stat-block"><span class="stat-number">' + totalEps + '</span><span class="stat-label">Episodes Watched</span></div>' +
+        '<div class="stat-divider"></div>' +
+        '<div class="stat-block"><span class="stat-number">' + uniqueAnimeCount + '</span><span class="stat-label">Anime Watched</span></div>' +
+        '<div class="stat-divider"></div>' +
+        '<div class="stat-block"><span class="stat-number">' + completedCount + '</span><span class="stat-label">Completed</span></div>' +
+        '<div class="stat-divider"></div>' +
+        '<div class="stat-block"><span class="stat-number">' + escapeHtml(topGenre) + '</span><span class="stat-label">Top Genre</span></div>' +
+        '<div class="stat-divider"></div>' +
+        '<div class="stat-block"><span class="stat-number">' + escapeHtml(mostActiveMonth) + '</span><span class="stat-label">Peak Month</span></div>' +
+      '</div>' +
+      topAnimeHtml +
+      '<div class="insights-panel recap-month-panel">' +
+        '<h3 class="panel-heading">// MONTHLY WATCH BREAKDOWN — ' + selectedYear + '</h3>' +
+        '<div class="chart-container">' + monthBarsHtml + '</div>' +
+      '</div>' +
+      '<div class="recap-actions-row">' +
+        '<button type="button" class="btn-primary" id="recap-copy-btn">📋 Copy Text Summary</button>' +
+        '<button type="button" class="btn-secondary" id="recap-download-btn">🖼️ Download Recap Card (PNG)</button>' +
+        '<canvas id="recap-render-canvas" width="600" height="780" style="display:none"></canvas>' +
+      '</div>' +
+    '</div>';
+}
+
+function copyRecapTextSummary(year) {
+  var watchEvents = (state.activity.watchEvents || []).filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === year;
+  });
+  var compEvents = (state.activity.completionEvents || []).filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === year;
+  });
+
+  var totalEps = 0;
+  var animeMap = {};
+  var genreCounts = {};
+  var monthCounts = [0,0,0,0,0,0,0,0,0,0,0,0];
+
+  watchEvents.forEach(function(ev) {
+    var eps = ev.episodes || 0;
+    totalEps += eps;
+    if (!animeMap[ev.animeId]) animeMap[ev.animeId] = { title: ev.title, eps: 0 };
+    animeMap[ev.animeId].eps += eps;
+    var m = new Date(ev.timestamp).getMonth();
+    if (m >= 0 && m <= 11) monthCounts[m] += eps;
+    var a = findAnimeById(ev.animeId);
+    if (a && a.genre) {
+      a.genre.split(',').forEach(function(g) {
+        var cl = g.trim();
+        if (cl) genreCounts[cl] = (genreCounts[cl] || 0) + eps;
+      });
+    }
+  });
+
+  var topAnime = 'None';
+  var topAnimeEps = 0;
+  Object.keys(animeMap).forEach(function(id) {
+    if (animeMap[id].eps > topAnimeEps) {
+      topAnimeEps = animeMap[id].eps;
+      topAnime = animeMap[id].title;
+    }
+  });
+
+  var topGenre = 'None';
+  var topGenreVal = 0;
+  Object.keys(genreCounts).forEach(function(g) {
+    if (genreCounts[g] > topGenreVal) {
+      topGenreVal = genreCounts[g];
+      topGenre = g;
+    }
+  });
+
+  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var maxM = 0;
+  var peakMonth = 'None';
+  monthCounts.forEach(function(cnt, idx) {
+    if (cnt > maxM) {
+      maxM = cnt;
+      peakMonth = monthNames[idx];
+    }
+  });
+
+  var text =
+    '╔══════════════════════════════════════════════╗\n' +
+    '  [ ANILOG ] — ' + year + ' YEAR IN REVIEW\n' +
+    '╚══════════════════════════════════════════════╝\n' +
+    '• Episodes Watched: ' + totalEps + '\n' +
+    '• Series Tracked:   ' + Object.keys(animeMap).length + '\n' +
+    '• Anime Completed:  ' + compEvents.length + '\n' +
+    '• Top Anime:        ' + topAnime + ' (' + topAnimeEps + ' eps)\n' +
+    '• Favorite Genre:   ' + topGenre + '\n' +
+    '• Peak Month:       ' + peakMonth + '\n\n' +
+    'Chronicle your anime journey at AniLOG:\n' +
+    'https://shashank0860.github.io/AniLOG/';
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast('Copied ' + year + ' Year in Review summary to clipboard!', 'success');
+    }).catch(function() {
+      fallbackCopyRecap(text, year);
+    });
+  } else {
+    fallbackCopyRecap(text, year);
+  }
+}
+
+function fallbackCopyRecap(text, year) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('Copied ' + year + ' Year in Review summary to clipboard!', 'success');
+  } catch (e) {
+    showToast('Unable to copy to clipboard.', 'error');
+  }
+  document.body.removeChild(ta);
+}
+
+function downloadRecapCard(year) {
+  var canvas = document.getElementById('recap-render-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  var watchEvents = (state.activity.watchEvents || []).filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === year;
+  });
+  var compEvents = (state.activity.completionEvents || []).filter(function(ev) {
+    return new Date(ev.timestamp).getFullYear() === year;
+  });
+
+  var totalEps = 0;
+  var animeMap = {};
+  var genreCounts = {};
+
+  watchEvents.forEach(function(ev) {
+    var eps = ev.episodes || 0;
+    totalEps += eps;
+    if (!animeMap[ev.animeId]) animeMap[ev.animeId] = { title: ev.title, eps: 0 };
+    animeMap[ev.animeId].eps += eps;
+    var a = findAnimeById(ev.animeId);
+    if (a && a.genre) {
+      a.genre.split(',').forEach(function(g) {
+        var cl = g.trim();
+        if (cl) genreCounts[cl] = (genreCounts[cl] || 0) + eps;
+      });
+    }
+  });
+
+  var topAnime = 'None';
+  var topAnimeEps = 0;
+  Object.keys(animeMap).forEach(function(id) {
+    if (animeMap[id].eps > topAnimeEps) {
+      topAnimeEps = animeMap[id].eps;
+      topAnime = animeMap[id].title;
+    }
+  });
+
+  var topGenre = 'None';
+  var topGenreVal = 0;
+  Object.keys(genreCounts).forEach(function(g) {
+    if (genreCounts[g] > topGenreVal) {
+      topGenreVal = genreCounts[g];
+      topGenre = g;
+    }
+  });
+
+  ctx.fillStyle = '#f9f7f2';
+  ctx.fillRect(0, 0, 600, 780);
+
+  ctx.strokeStyle = '#0a0a0a';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(16, 16, 568, 748);
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(24, 24, 552, 732);
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(24, 24, 552, 90);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 26px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('[ ANILOG ]', 300, 60);
+
+  ctx.font = '14px "Arial Narrow", sans-serif';
+  ctx.letterSpacing = '3px';
+  ctx.fillText('YEAR IN REVIEW — ' + year, 300, 88);
+
+  var drawBox = function(x, y, w, h, num, lbl) {
+    ctx.strokeStyle = '#0a0a0a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = '#0a0a0a';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 36px Georgia, serif';
+    ctx.fillText(String(num), x + w / 2, y + 46);
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.fillText(lbl, x + w / 2, y + 68);
+  };
+
+  drawBox(40, 140, 155, 84, totalEps, 'EPISODES WATCHED');
+  drawBox(222, 140, 155, 84, Object.keys(animeMap).length, 'SERIES LOGGED');
+  drawBox(405, 140, 155, 84, compEvents.length, 'COMPLETED');
+
+  ctx.strokeStyle = '#0a0a0a';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(40, 250, 520, 200);
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(40, 250, 520, 32);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 12px "Courier New", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('★ #1 MOST WATCHED ANIME IN ' + year, 55, 271);
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.font = 'bold 24px Georgia, serif';
+  var truncTitle = topAnime.length > 32 ? topAnime.substring(0, 30) + '...' : topAnime;
+  ctx.fillText(truncTitle, 55, 330);
+
+  ctx.font = '16px "Courier New", monospace';
+  ctx.fillText(topAnimeEps + ' episodes logged', 55, 365);
+
+  ctx.font = '13px "Courier New", monospace';
+  ctx.fillStyle = '#555555';
+  ctx.fillText('Top Genre: ' + topGenre, 55, 410);
+
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth = 1;
+  for (var li = 0; li < 14; li++) {
+    ctx.beginPath();
+    ctx.moveTo(420 + li * 8, 300);
+    ctx.lineTo(400 + li * 8, 430);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.textAlign = 'center';
+  ctx.font = 'italic 16px Georgia, serif';
+  ctx.fillText('"Every episode watched becomes part of your story."', 300, 500);
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(40, 680, 520, 48);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '12px "Courier New", monospace';
+  ctx.fillText('ANILOG · YOUR STORY, YOUR LOG · 物語は続く', 300, 708);
+
+  if (canvas.toBlob) {
+    canvas.toBlob(function(blob) {
+      if (!blob) return;
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'anilog-recap-' + year + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Downloaded ' + year + ' Year in Review card!', 'success');
+    });
+  } else {
+    showToast('Canvas download not supported on this browser.', 'warning');
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
    5. EVENTS — user interaction
 ═══════════════════════════════════════════════════════════ */
 
@@ -1421,6 +2375,9 @@ function navigateTo(sectionId, updateHash, detailId) {
   document.querySelectorAll('.app-section').forEach(function(s) { s.classList.remove('active'); });
   var target = document.getElementById(sectionId);
   if (target) target.classList.add('active');
+  if (sectionId === 'insights' && typeof renderInsights === 'function') {
+    renderInsights();
+  }
 
   document.querySelectorAll('.nav-link').forEach(function(link) {
     link.classList.toggle('active', link.dataset.section === sectionId);
@@ -2853,6 +3810,7 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
 ═══════════════════════════════════════════════════════════ */
 
 var pendingImportEntries = null;
+var pendingImportActivity = null;
 
 function exportLibraryBackup() {
   var now = new Date();
@@ -2864,7 +3822,8 @@ function exportLibraryBackup() {
   var payload = {
     schemaVersion: SCHEMA_VERSION,
     exportedAt: now.toISOString(),
-    library: state.library
+    library: state.library,
+    activity: state.activity
   };
 
   var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -2909,14 +3868,27 @@ function handleImportFile(file) {
       var reviewCount = sanitized.filter(function(a) { return a.review && a.review.trim() !== ''; }).length;
       var quoteCount = sanitized.reduce(function(sum, a) { return sum + (Array.isArray(a.quotes) ? a.quotes.length : 0); }, 0);
 
+      var pendingActivity = null;
+      if (parsed && typeof parsed === 'object' && parsed.activity && typeof parsed.activity === 'object') {
+        pendingActivity = {
+          schemaVersion: ACTIVITY_SCHEMA_VERSION,
+          watchEvents: sanitizeWatchEvents(parsed.activity.watchEvents),
+          completionEvents: sanitizeCompletionEvents(parsed.activity.completionEvents)
+        };
+      }
+
       pendingImportEntries = sanitized;
+      pendingImportActivity = pendingActivity;
+
+      var activityMsg = pendingActivity ? ' and ' + pendingActivity.watchEvents.length + ' activity logs' : '';
       document.getElementById('import-summary').textContent =
         'Ready to import ' + sanitized.length + ' anime entries (' +
-        reviewCount + ' reviews, ' + quoteCount + ' quotes). ' +
+        reviewCount + ' reviews, ' + quoteCount + ' quotes' + activityMsg + '). ' +
         'Choose Merge to combine by ID, or Replace All to overwrite your current library.';
       showModal('import-overlay');
     } catch (err) {
       pendingImportEntries = null;
+      pendingImportActivity = null;
       showToast('Invalid backup file: ' + (err && err.message ? err.message : 'could not parse JSON.'), 'error', 6000);
     }
   };
@@ -2942,17 +3914,20 @@ document.getElementById('import-file-input').addEventListener('change', function
 
 document.getElementById('import-close').addEventListener('click', function() {
   pendingImportEntries = null;
+  pendingImportActivity = null;
   hideModal('import-overlay');
 });
 
 document.getElementById('import-cancel').addEventListener('click', function() {
   pendingImportEntries = null;
+  pendingImportActivity = null;
   hideModal('import-overlay');
 });
 
 document.getElementById('import-overlay').addEventListener('click', function(e) {
   if (e.target === this) {
     pendingImportEntries = null;
+    pendingImportActivity = null;
     hideModal('import-overlay');
   }
 });
@@ -2963,6 +3938,13 @@ document.getElementById('import-replace').addEventListener('click', function() {
   state.currentAnimeId = null;
   var count = pendingImportEntries.length;
   pendingImportEntries = null;
+
+  if (pendingImportActivity) {
+    state.activity = pendingImportActivity;
+    activitySave(state.activity);
+  }
+  pendingImportActivity = null;
+
   hideModal('import-overlay');
   stateCommit();
   showToast('Replaced library with ' + count + ' imported entries.', 'success');
@@ -2989,6 +3971,30 @@ document.getElementById('import-merge').addEventListener('click', function() {
     }
   });
   pendingImportEntries = null;
+
+  if (pendingImportActivity) {
+    var wIds = {};
+    state.activity.watchEvents.forEach(function(ev) { wIds[ev.id] = true; });
+    pendingImportActivity.watchEvents.forEach(function(ev) {
+      if (!wIds[ev.id]) {
+        state.activity.watchEvents.push(ev);
+        wIds[ev.id] = true;
+      }
+    });
+    var cIds = {};
+    state.activity.completionEvents.forEach(function(ev) { cIds[ev.id] = true; });
+    pendingImportActivity.completionEvents.forEach(function(ev) {
+      if (!cIds[ev.id]) {
+        state.activity.completionEvents.push(ev);
+        cIds[ev.id] = true;
+      }
+    });
+    state.activity.watchEvents.sort(function(a, b) { return b.timestamp - a.timestamp; });
+    state.activity.completionEvents.sort(function(a, b) { return b.timestamp - a.timestamp; });
+    activitySave(state.activity);
+  }
+  pendingImportActivity = null;
+
   hideModal('import-overlay');
   stateCommit();
   showToast('Merged backup: ' + added + ' added, ' + updated + ' updated.', 'success');
@@ -3157,6 +4163,61 @@ function loadDemoData() {
       quotes: []
     }
   ];
+
+  if (state.activity.watchEvents.length === 0) {
+    state.activity.watchEvents = [
+      {
+        id: 'demo-w1',
+        animeId: 'demo-frieren',
+        title: "Frieren: Beyond Journey's End",
+        posterUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&q=80',
+        episodes: 2,
+        prevEp: 20,
+        newEp: 22,
+        timestamp: now - 1 * day,
+        localDate: toLocalDateKey(now - 1 * day),
+        demo: true
+      },
+      {
+        id: 'demo-w2',
+        animeId: 'demo-dungeon',
+        title: 'Delicious in Dungeon',
+        posterUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&q=80',
+        episodes: 3,
+        prevEp: 11,
+        newEp: 14,
+        timestamp: now - 3 * day,
+        localDate: toLocalDateKey(now - 3 * day),
+        demo: true
+      },
+      {
+        id: 'demo-w3',
+        animeId: 'demo-fma',
+        title: 'Fullmetal Alchemist: Brotherhood',
+        posterUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&q=80',
+        episodes: 4,
+        prevEp: 60,
+        newEp: 64,
+        timestamp: now - 7 * day,
+        localDate: toLocalDateKey(now - 7 * day),
+        demo: true
+      }
+    ];
+    state.activity.completionEvents = [
+      {
+        id: 'demo-c1',
+        animeId: 'demo-fma',
+        title: 'Fullmetal Alchemist: Brotherhood',
+        posterUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&q=80',
+        format: 'TV',
+        timestamp: now - 7 * day,
+        localDate: toLocalDateKey(now - 7 * day),
+        demo: true
+      }
+    ];
+    activitySave(state.activity);
+  }
+
   stateCommit();
   showToast('Loaded 7 sample demo entries.', 'success');
 }
@@ -3170,6 +4231,11 @@ function removeDemoData() {
     document.getElementById('details-content').innerHTML = '';
     if (window.location.hash.indexOf('#details') === 0) navigateTo('library');
   }
+
+  state.activity.watchEvents = state.activity.watchEvents.filter(function(ev) { return ev.demo !== true; });
+  state.activity.completionEvents = state.activity.completionEvents.filter(function(ev) { return ev.demo !== true; });
+  activitySave(state.activity);
+
   stateCommit();
   showToast('Removed ' + removed + ' demo ' + (removed === 1 ? 'entry' : 'entries') + '.', 'info');
 }
@@ -3188,6 +4254,83 @@ document.addEventListener('click', function(e) {
 var removeDemoBtnEl = document.getElementById('remove-demo-btn');
 if (removeDemoBtnEl) {
   removeDemoBtnEl.addEventListener('click', removeDemoData);
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   5.12 WATCH ACTIVITY & INSIGHTS EVENTS
+═══════════════════════════════════════════════════════════ */
+
+// Subtabs switcher
+var insightsTabsEl = document.getElementById('insights-tabs');
+if (insightsTabsEl) {
+  insightsTabsEl.addEventListener('click', function(e) {
+    var btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    var tab = btn.getAttribute('data-insights-tab');
+    if (!tab) return;
+    state.insightsTab = tab;
+    renderInsights();
+  });
+}
+
+// Insights content clicks (delegated)
+var insightsContentEl = document.getElementById('insights-content');
+if (insightsContentEl) {
+  insightsContentEl.addEventListener('click', function(e) {
+    // Timeline filter buttons
+    var tFilterBtn = e.target.closest('[data-tfilter]');
+    if (tFilterBtn) {
+      state.timelineFilter = tFilterBtn.getAttribute('data-tfilter') || 'all';
+      state.timelineLimit = 20;
+      renderInsights();
+      return;
+    }
+
+    // Timeline load more
+    if (e.target.closest('#timeline-load-more-btn')) {
+      state.timelineLimit = (state.timelineLimit || 20) + 20;
+      renderInsights();
+      return;
+    }
+
+    // Chart period buttons
+    var cPeriodBtn = e.target.closest('[data-chart-period]');
+    if (cPeriodBtn) {
+      state.chartPeriod = cPeriodBtn.getAttribute('data-chart-period') || 'daily';
+      renderInsights();
+      return;
+    }
+
+    // Navigation to details from timeline or spotlight
+    var navDetailsEl = e.target.closest('[data-nav-details]');
+    if (navDetailsEl) {
+      e.preventDefault();
+      var animeId = navDetailsEl.getAttribute('data-nav-details');
+      navigateTo('details', true, animeId);
+      return;
+    }
+
+    // Recap copy text summary
+    if (e.target.closest('#recap-copy-btn')) {
+      copyRecapTextSummary(state.recapYear || new Date().getFullYear());
+      return;
+    }
+
+    // Recap download card image
+    if (e.target.closest('#recap-download-btn')) {
+      downloadRecapCard(state.recapYear || new Date().getFullYear());
+      return;
+    }
+  });
+
+  // Recap year selector change
+  insightsContentEl.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'recap-year-select') {
+      state.recapYear = parseInt(e.target.value, 10) || new Date().getFullYear();
+      renderInsights();
+    }
+  });
 }
 
 
