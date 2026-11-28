@@ -117,9 +117,14 @@ function sanitizeLibraryEntries(rawArray) {
     .map(function(item) {
       var parsedTotal = item.totalEps === null ? null : parseInt(item.totalEps, 10);
       var totalEps    = (parsedTotal === null || isNaN(parsedTotal)) ? null : Math.max(1, parsedTotal);
-      var rawWatched  = Math.max(0, parseInt(item.watchedEps, 10) || 0);
+      var rawWatched  = Math.max(0, Math.floor(Number(item.watchedEps) || 0));
       var watchedEps  = totalEps !== null ? Math.min(totalEps, rawWatched) : rawWatched;
-      var rating      = Math.min(10, Math.max(0, parseInt(item.rating, 10) || 0));
+      var parsedRating = (item.rating === null || item.rating === undefined || item.rating === '' || item.rating === 0 || item.rating === '0')
+        ? null
+        : parseInt(item.rating, 10);
+      var rating      = (parsedRating === null || isNaN(parsedRating) || parsedRating < 1)
+        ? null
+        : Math.min(10, parsedRating);
       var anilistId   = typeof item.anilistId === 'number' ? item.anilistId : null;
       var stableId    = (item.id && String(item.id).trim())
         ? String(item.id).trim()
@@ -348,13 +353,41 @@ function formatMediaFormat(format) {
 }
 
 /**
- * Returns the percentage of episodes watched, clamped 0–100.
+ * Computes normalized progress details for an anime entry.
+ * Returns percent: null when totalEps is null, 0, or missing (never NaN/Infinity/0%).
+ * @param {Object} entry
+ * @returns {{ watched: number, total: number|null, percent: number|null, barWidth: number, label: string }}
+ */
+function getProgress(entry) {
+  var watched = Math.max(0, Math.floor(Number(entry && entry.watchedEps) || 0));
+  var total = (entry && typeof entry.totalEps === 'number' && entry.totalEps > 0) ? entry.totalEps : null;
+  if (total === null) {
+    return {
+      watched:  watched,
+      total:    null,
+      percent:  null,
+      barWidth: 0,
+      label:    'Ongoing'
+    };
+  }
+  var clampedWatched = Math.min(total, watched);
+  var pct = Math.min(100, Math.round((clampedWatched / total) * 100));
+  return {
+    watched:  clampedWatched,
+    total:    total,
+    percent:  pct,
+    barWidth: pct,
+    label:    pct + '% complete'
+  };
+}
+
+/**
+ * Legacy alias for getProgress(anime).percent (returns 0 only when numeric needed).
  * @param {Object} anime
- * @returns {number}
+ * @returns {number|null}
  */
 function calcProgress(anime) {
-  if (!anime.totalEps || anime.totalEps === 0) return 0;
-  return Math.min(100, Math.round((anime.watchedEps / anime.totalEps) * 100));
+  return getProgress(anime).percent;
 }
 
 /**
@@ -438,19 +471,33 @@ function getFilteredLibrary() {
     });
   }
 
-  // Sort
+  // Stable sort with Title A–Z tiebreak
+  function compareTitle(a, b) {
+    return a.title.localeCompare(b.title);
+  }
+
   list.sort(function(a, b) {
     if (state.sortBy === 'title') {
-      return a.title.localeCompare(b.title);
+      return compareTitle(a, b);
     }
     if (state.sortBy === 'rating') {
-      return b.rating - a.rating; // highest first
+      var ra = typeof a.rating === 'number' && a.rating >= 1 ? a.rating : null;
+      var rb = typeof b.rating === 'number' && b.rating >= 1 ? b.rating : null;
+      if (ra === null && rb === null) return compareTitle(a, b);
+      if (ra === null) return 1;  // unrated always last
+      if (rb === null) return -1;
+      return (rb - ra) || compareTitle(a, b);
     }
     if (state.sortBy === 'progress') {
-      return calcProgress(b) - calcProgress(a); // highest first
+      var pa = getProgress(a).percent;
+      var pb = getProgress(b).percent;
+      if (pa === null && pb === null) return compareTitle(a, b);
+      if (pa === null) return 1;  // ongoing/unknown always last
+      if (pb === null) return -1;
+      return (pb - pa) || compareTitle(a, b);
     }
-    // Default: 'added' — newest first
-    return b.addedAt - a.addedAt;
+    // Default: 'added' — newest first, tiebreak by title
+    return ((b.addedAt || 0) - (a.addedAt || 0)) || compareTitle(a, b);
   });
 
   return list;
@@ -528,7 +575,7 @@ function renderDashboardWatching() {
   }
 
   container.innerHTML = watching.slice(0, 5).map(function(anime) {
-    var pct = calcProgress(anime);
+    var prog = getProgress(anime);
     return (
       '<div class="watching-card" data-id="' + anime.id + '">' +
         '<div class="watching-poster">' +
@@ -540,11 +587,11 @@ function renderDashboardWatching() {
           '<p class="watching-meta">' + escapeHtml(anime.genre || 'No genre set') + '</p>' +
           '<div class="episode-progress">' +
             '<span class="ep-label">EP</span>' +
-            '<span class="ep-current">' + anime.watchedEps + '</span>' +
+            '<span class="ep-current">' + prog.watched + '</span>' +
             '<span class="ep-sep">/</span>' +
-            '<span class="ep-total">' + formatTotalEps(anime) + '</span>' +
+            '<span class="ep-total">' + (prog.total !== null ? prog.total : 'Ongoing') + '</span>' +
           '</div>' +
-          '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="progress-bar"><div class="progress-fill" style="width:' + prog.barWidth + '%"></div></div>' +
         '</div>' +
         '<div class="watching-actions">' +
           '<button class="btn-secondary btn-sm dash-ep-btn" data-id="' + anime.id + '">+ EP</button>' +
@@ -606,7 +653,7 @@ function renderLibrary() {
   }
 
   grid.innerHTML = list.map(function(anime) {
-    var pct   = calcProgress(anime);
+    var prog  = getProgress(anime);
     var stars = buildStarSummary(anime.rating);
     return (
       '<article class="anime-card" data-id="' + anime.id + '" data-status="' + anime.status + '">' +
@@ -618,8 +665,8 @@ function renderLibrary() {
           '<h3 class="anime-card-title">' + escapeHtml(anime.title) + '</h3>' +
           '<p class="anime-card-meta">' + escapeHtml(formatCardMeta(anime)) + '</p>' +
           '<div class="anime-card-progress">' +
-            '<div class="progress-bar progress-bar--sm"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
-            '<span class="ep-fraction">' + anime.watchedEps + '/' + formatTotalEps(anime) + '</span>' +
+            '<div class="progress-bar progress-bar--sm"><div class="progress-fill" style="width:' + prog.barWidth + '%"></div></div>' +
+            '<span class="ep-fraction">' + prog.watched + '/' + (prog.total !== null ? prog.total : 'Ongoing') + '</span>' +
           '</div>' +
           '<div class="star-rating-sm">' + stars + '</div>' +
         '</div>' +
@@ -644,13 +691,13 @@ function renderTabCounts() {
  * @param {Object} anime
  */
 function renderDetails(anime) {
-  var pct    = calcProgress(anime);
-  var rating = anime.rating || 0;
+  var prog   = getProgress(anime);
+  var rating = (typeof anime.rating === 'number' && anime.rating >= 1) ? anime.rating : null;
 
   // Build 10 clickable & keyboard-accessible star spans
   var starsHtml = '';
   for (var i = 1; i <= 10; i++) {
-    var filled = i <= rating ? '★' : '☆';
+    var filled = rating !== null && i <= rating ? '★' : '☆';
     var isCurrent = i === rating ? 'true' : 'false';
     starsHtml += '<span class="rating-star" data-star="' + i + '" role="button" tabindex="0" aria-pressed="' + isCurrent + '" aria-label="Rate ' + i + ' out of 10">' + filled + '</span>';
   }
@@ -670,7 +717,7 @@ function renderDetails(anime) {
           (anime.airingStatus ? '<div class="qs-row"><span class="qs-label">Air Status</span><span class="qs-value">' + escapeHtml(formatAiringStatus(anime.airingStatus)) + '</span></div>' : '') +
           '<div class="qs-row"><span class="qs-label">Status</span><span class="qs-value">' + statusLabel(anime.status) + '</span></div>' +
           '<div class="qs-row"><span class="qs-label">Genre</span><span class="qs-value">' + escapeHtml(anime.genre || '—') + '</span></div>' +
-          '<div class="qs-row"><span class="qs-label">Rating</span><span class="qs-value">' + (rating > 0 ? rating + '/10' : 'Unrated') + '</span></div>' +
+          '<div class="qs-row"><span class="qs-label">Rating</span><span class="qs-value">' + (rating !== null ? rating + '/10' : 'Unrated') + '</span></div>' +
           '<div class="qs-row"><span class="qs-label">Added</span><span class="qs-value">' + formatDate(anime.addedAt) + '</span></div>' +
         '</div>' +
         '<div class="details-actions">' +
@@ -694,11 +741,11 @@ function renderDetails(anime) {
               '<span class="ep-total-big">' + formatTotalEps(anime) + '</span>' +
             '</div>' +
             '<div class="progress-bar progress-bar--lg">' +
-              '<div class="progress-fill" id="detail-ep-bar" style="width:' + pct + '%"></div>' +
+              '<div class="progress-fill" id="detail-ep-bar" style="width:' + prog.barWidth + '%"></div>' +
             '</div>' +
             '<div class="ep-controls">' +
               '<button class="btn-secondary btn-sm" id="detail-ep-minus" data-id="' + anime.id + '">− Episode</button>' +
-              '<span class="ep-pct" id="detail-ep-pct">' + (anime.totalEps !== null ? pct + '% complete' : 'Ongoing / Unknown total') + '</span>' +
+              '<span class="ep-pct" id="detail-ep-pct">' + prog.label + '</span>' +
               '<button class="btn-primary btn-sm" id="detail-ep-plus" data-id="' + anime.id + '">+ Episode</button>' +
             '</div>' +
           '</div>' +
@@ -708,10 +755,10 @@ function renderDetails(anime) {
         '<div class="details-block">' +
           '<h3 class="details-block-title">My Rating</h3>' +
           '<div class="rating-widget">' +
-            '<div class="rating-stars" id="detail-rating-stars" data-id="' + anime.id + '" data-selected="' + rating + '" role="group" aria-label="Rate this anime">' +
+            '<div class="rating-stars" id="detail-rating-stars" data-id="' + anime.id + '" data-selected="' + (rating !== null ? rating : 0) + '" role="group" aria-label="Rate this anime">' +
               starsHtml +
             '</div>' +
-            '<span class="rating-label" id="detail-rating-label">' + (rating > 0 ? rating + ' / 10' : 'Not yet rated') + '</span>' +
+            '<span class="rating-label" id="detail-rating-label">' + (rating !== null ? rating + ' / 10' : 'Unrated') + '</span>' +
           '</div>' +
         '</div>' +
 
@@ -1357,6 +1404,43 @@ document.getElementById('form-episodes-unknown').addEventListener('change', func
   if (this.checked) episodesEl.value = '';
 });
 
+// Auto-sync watched episodes when status is set to Completed (known total) or Plan to Watch
+document.getElementById('form-status').addEventListener('change', function() {
+  var unknownEps = document.getElementById('form-episodes-unknown').checked;
+  var totalEps = parseInt(document.getElementById('form-episodes').value, 10);
+  var watchedEl = document.getElementById('form-watched');
+  if (this.value === 'completed' && !unknownEps && !isNaN(totalEps) && totalEps > 0) {
+    watchedEl.value = String(totalEps);
+    document.getElementById('error-watched').textContent = '';
+    watchedEl.classList.remove('input-error');
+  } else if (this.value === 'plan') {
+    watchedEl.value = '0';
+  }
+});
+
+// Clamp watched episodes to [0, total] on change/blur with inline feedback
+function clampManualWatchedInput() {
+  var watchedEl = document.getElementById('form-watched');
+  var errEl = document.getElementById('error-watched');
+  var raw = watchedEl.value.trim();
+  if (raw === '') return;
+  var val = Math.floor(Number(raw));
+  var unknownEps = document.getElementById('form-episodes-unknown').checked;
+  var totalEps = parseInt(document.getElementById('form-episodes').value, 10);
+
+  if (isNaN(val) || val < 0) {
+    watchedEl.value = '0';
+    errEl.textContent = 'Watched episodes clamped to 0.';
+  } else if (!unknownEps && !isNaN(totalEps) && totalEps > 0 && val > totalEps) {
+    watchedEl.value = String(totalEps);
+    errEl.textContent = 'Clamped to maximum episodes (' + totalEps + ').';
+  } else if (String(val) !== raw) {
+    watchedEl.value = String(val);
+  }
+}
+document.getElementById('form-watched').addEventListener('change', clampManualWatchedInput);
+document.getElementById('form-watched').addEventListener('blur', clampManualWatchedInput);
+
 // Modal close / cancel
 document.getElementById('modal-close').addEventListener('click', function() { hideModal('modal-overlay'); });
 document.getElementById('form-cancel').addEventListener('click', function() { hideModal('modal-overlay'); });
@@ -1411,7 +1495,7 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
       releaseYear:   null,
       airingStatus:  '',
       genre:         genre,
-      rating:        0,
+      rating:        null,
       review:        '',
       notes:         '',
       addedAt:       now,
@@ -2186,7 +2270,7 @@ function selectSearchResult(mediaId) {
   statusEl.value = media.status === 'NOT_YET_RELEASED' ? 'plan' : 'watching';
   watchedEl.value = '0';
   watchedEl.max   = totalEps !== null ? String(totalEps) : '9999';
-  ratingEl.value  = '0';
+  ratingEl.value  = '';
 
   var unknownRow = document.getElementById('search-unknown-row');
   if (unknownRow) {
@@ -2309,6 +2393,29 @@ document.getElementById('search-add-status').addEventListener('change', function
   }
 });
 
+// Clamp search-add-watched to [0, total] on change/blur with inline feedback
+function clampSearchWatchedInput() {
+  var media = searchState.selectedMedia;
+  var watchedEl = document.getElementById('search-add-watched');
+  var errEl = document.getElementById('error-search-watched');
+  var raw = watchedEl.value.trim();
+  if (raw === '') return;
+  var val = Math.floor(Number(raw));
+  var totalEps = media ? (media.format === 'MOVIE' ? 1 : (typeof media.episodes === 'number' ? media.episodes : null)) : null;
+
+  if (isNaN(val) || val < 0) {
+    watchedEl.value = '0';
+    errEl.textContent = 'Watched episodes clamped to 0.';
+  } else if (totalEps !== null && val > totalEps) {
+    watchedEl.value = String(totalEps);
+    errEl.textContent = 'Clamped to maximum episodes (' + totalEps + ').';
+  } else if (String(val) !== raw) {
+    watchedEl.value = String(val);
+  }
+}
+document.getElementById('search-add-watched').addEventListener('change', clampSearchWatchedInput);
+document.getElementById('search-add-watched').addEventListener('blur', clampSearchWatchedInput);
+
 // Save selected AniList anime to library
 document.getElementById('search-add-form').addEventListener('submit', function(e) {
   e.preventDefault();
@@ -2335,8 +2442,10 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
   var totalEps = isMovie ? 1 : (typeof media.episodes === 'number' ? media.episodes : null);
   var status   = statusEl.value;
   var rawW     = watchedEl.value.trim();
-  var watched  = rawW === '' ? 0 : parseInt(rawW, 10);
-  var rating   = Math.min(10, Math.max(0, parseInt(ratingEl.value, 10) || 0));
+  var watched  = rawW === '' ? 0 : Math.floor(Number(rawW));
+  var rawR     = ratingEl.value;
+  var parsedR  = (rawR === '' || rawR === '0') ? null : parseInt(rawR, 10);
+  var rating   = (parsedR === null || isNaN(parsedR) || parsedR < 1) ? null : Math.min(10, parsedR);
 
   var valid = true;
   if (isNaN(watched) || watched < 0) {
