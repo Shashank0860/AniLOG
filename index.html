@@ -24,7 +24,7 @@
         <a href="#details"    class="nav-link"         data-section="details">Anime Details</a>
         <a href="#journal"    class="nav-link"         data-section="journal">My Journal</a>
       </nav>
-      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="main-nav">
         <span></span><span></span><span></span>
       </button>
     </div>
@@ -298,7 +298,10 @@
           <p class="section-label">// COLLECTION</p>
           <h2 class="section-title">My Library</h2>
         </div>
-        <button class="btn-primary" id="library-add-btn">+ Add Anime</button>
+        <div class="section-header-actions">
+          <button type="button" class="btn-secondary btn-sm" id="remove-demo-btn" style="display:none">Remove Demo Data</button>
+          <button class="btn-primary" id="library-add-btn">+ Add Anime</button>
+        </div>
       </div>
 
       <!-- Search & Filter Bar -->

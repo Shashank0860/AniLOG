@@ -148,6 +148,7 @@ function sanitizeLibraryEntries(rawArray) {
         addedAt:       typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
         updatedAt:     typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now()),
         autoCompleted: item.autoCompleted === true,
+        demo:          item.demo === true,
         quotes:        sanitizeQuotes(item.quotes)
       };
     });
@@ -537,6 +538,11 @@ function renderAll() {
   renderLibrary();
   renderTabCounts();
   renderJournal();
+  var removeDemoBtn = document.getElementById('remove-demo-btn');
+  if (removeDemoBtn) {
+    var hasDemo = state.library.some(function(a) { return a.demo === true; });
+    removeDemoBtn.style.display = hasDemo ? '' : 'none';
+  }
   // If a details panel is open, refresh it too
   if (state.currentAnimeId) {
     var anime = findAnimeById(state.currentAnimeId);
@@ -571,7 +577,17 @@ function renderDashboardWatching() {
   var watching = state.library.filter(function(a) { return a.status === 'watching'; });
 
   if (watching.length === 0) {
-    container.innerHTML = '<p class="empty-state">Nothing currently watching.<br><em>Add an anime to get started.</em></p>';
+    var demoBtnHtml = state.library.length === 0
+      ? ' <button type="button" class="btn-secondary btn-sm load-demo-btn">Load Demo Data</button>'
+      : '';
+    container.innerHTML =
+      '<div class="empty-state">' +
+        '<p>Nothing currently watching.<br><em>Add an anime to start tracking your progress.</em></p>' +
+        '<div class="empty-state-actions">' +
+          '<button type="button" class="btn-primary btn-sm empty-add-btn">+ Add Anime</button>' +
+          demoBtnHtml +
+        '</div>' +
+      '</div>';
     return;
   }
 
@@ -595,7 +611,7 @@ function renderDashboardWatching() {
           '<div class="progress-bar"><div class="progress-fill" style="width:' + prog.barWidth + '%"></div></div>' +
         '</div>' +
         '<div class="watching-actions">' +
-          '<button class="btn-secondary btn-sm dash-ep-btn" data-id="' + anime.id + '">+ EP</button>' +
+          '<button type="button" class="btn-secondary btn-sm dash-ep-btn" data-id="' + anime.id + '" aria-label="Add 1 watched episode for ' + escapeHtml(anime.title) + '">+ EP</button>' +
         '</div>' +
       '</div>'
     );
@@ -618,7 +634,7 @@ function renderDashboardCompleted() {
   container.innerHTML = completed.map(function(anime) {
     var stars = buildStarSummary(anime.rating);
     return (
-      '<div class="completed-item" data-id="' + anime.id + '" style="cursor:pointer">' +
+      '<button type="button" class="completed-item" data-id="' + anime.id + '">' +
         '<div class="completed-poster-mini">' +
           buildPosterHtml(anime, 'completed-poster-img') +
         '</div>' +
@@ -626,7 +642,7 @@ function renderDashboardCompleted() {
           '<p class="completed-title">' + escapeHtml(anime.title) + '</p>' +
           '<div class="star-rating">' + stars + '</div>' +
         '</div>' +
-      '</div>'
+      '</button>'
     );
   }).join('');
 }
@@ -640,14 +656,17 @@ function renderLibrary() {
     if (state.library.length === 0) {
       grid.innerHTML =
         '<div class="empty-state empty-state--grid">' +
-          '<p>Your library is empty.<br><em>Add your first anime to begin your log.</em></p>' +
-          '<button class="btn-primary btn-sm empty-add-btn">+ Add Anime</button>' +
+          '<p>Your library is empty.<br><em>Add your first anime or load sample data to explore AniLOG.</em></p>' +
+          '<div class="empty-state-actions">' +
+            '<button type="button" class="btn-primary btn-sm empty-add-btn">+ Add Anime</button>' +
+            '<button type="button" class="btn-secondary btn-sm load-demo-btn">Load Demo Data</button>' +
+          '</div>' +
         '</div>';
     } else {
       grid.innerHTML =
         '<div class="empty-state empty-state--grid">' +
           '<p>No anime match your current filter.<br><em>Try another keyword or reset filters.</em></p>' +
-          '<button class="btn-secondary btn-sm empty-reset-btn">Clear Filters</button>' +
+          '<button type="button" class="btn-secondary btn-sm empty-reset-btn">Clear Filters</button>' +
         '</div>';
     }
     return;
@@ -658,19 +677,21 @@ function renderLibrary() {
     var stars = buildStarSummary(anime.rating);
     return (
       '<article class="anime-card" data-id="' + anime.id + '" data-status="' + anime.status + '">' +
-        '<div class="anime-card-poster">' +
-          buildPosterHtml(anime, 'poster-lg') +
-          '<div class="status-badge status-' + anime.status + '">' + statusLabel(anime.status) + '</div>' +
-        '</div>' +
-        '<div class="anime-card-info">' +
-          '<h3 class="anime-card-title">' + escapeHtml(anime.title) + '</h3>' +
-          '<p class="anime-card-meta">' + escapeHtml(formatCardMeta(anime)) + '</p>' +
-          '<div class="anime-card-progress">' +
-            '<div class="progress-bar progress-bar--sm"><div class="progress-fill" style="width:' + prog.barWidth + '%"></div></div>' +
-            '<span class="ep-fraction">' + prog.watched + '/' + (prog.total !== null ? prog.total : 'Ongoing') + '</span>' +
+        '<button type="button" class="anime-card-btn" aria-label="Open details for ' + escapeHtml(anime.title) + '">' +
+          '<div class="anime-card-poster">' +
+            buildPosterHtml(anime, 'poster-lg') +
+            '<div class="status-badge status-' + anime.status + '">' + statusLabel(anime.status) + '</div>' +
           '</div>' +
-          '<div class="star-rating-sm">' + stars + '</div>' +
-        '</div>' +
+          '<div class="anime-card-info">' +
+            '<h3 class="anime-card-title">' + escapeHtml(anime.title) + '</h3>' +
+            '<p class="anime-card-meta">' + escapeHtml(formatCardMeta(anime)) + '</p>' +
+            '<div class="anime-card-progress">' +
+              '<div class="progress-bar progress-bar--sm"><div class="progress-fill" style="width:' + prog.barWidth + '%"></div></div>' +
+              '<span class="ep-fraction">' + prog.watched + '/' + (prog.total !== null ? prog.total : 'Ongoing') + '</span>' +
+            '</div>' +
+            '<div class="star-rating-sm">' + stars + '</div>' +
+          '</div>' +
+        '</button>' +
       '</article>'
     );
   }).join('');
@@ -695,12 +716,12 @@ function renderDetails(anime) {
   var prog   = getProgress(anime);
   var rating = (typeof anime.rating === 'number' && anime.rating >= 1) ? anime.rating : null;
 
-  // Build 10 clickable & keyboard-accessible star spans
+  // Build 10 clickable & keyboard-accessible star buttons
   var starsHtml = '';
   for (var i = 1; i <= 10; i++) {
     var filled = rating !== null && i <= rating ? '★' : '☆';
     var isCurrent = i === rating ? 'true' : 'false';
-    starsHtml += '<span class="rating-star" data-star="' + i + '" role="button" tabindex="0" aria-pressed="' + isCurrent + '" aria-label="Rate ' + i + ' out of 10">' + filled + '</span>';
+    starsHtml += '<button type="button" class="rating-star" data-star="' + i + '" aria-pressed="' + isCurrent + '" aria-label="Rate ' + i + ' out of 10">' + filled + '</button>';
   }
 
   var html = (
@@ -998,14 +1019,20 @@ function renderJournal() {
 
   if (entries.length === 0) {
     var emptyMsg;
+    var emptyCta;
     if (filter === 'reviews') {
       emptyMsg = 'No reviews written yet.<br><em>Open any anime\'s Details page and write a review in "My Review".</em>';
+      emptyCta = '<button type="button" class="btn-secondary btn-sm" data-nav="library">Browse Library</button>';
     } else if (filter === 'quotes') {
       emptyMsg = 'No favourite quotes saved yet.<br><em>Open any anime\'s Details page and save memorable lines under "Favourite Quotes".</em>';
+      emptyCta = '<button type="button" class="btn-secondary btn-sm" data-nav="library">Browse Library</button>';
     } else {
       emptyMsg = 'Your journal archive is empty.<br><em>Write a review or save a favourite quote on any anime\'s Details page to start your archive.</em>';
+      emptyCta = state.library.length === 0
+        ? '<button type="button" class="btn-primary btn-sm empty-add-btn">+ Add Anime</button> <button type="button" class="btn-secondary btn-sm load-demo-btn">Load Demo Data</button>'
+        : '<button type="button" class="btn-secondary btn-sm" data-nav="library">Browse Library</button>';
     }
-    feed.innerHTML    = '<p class="empty-state">' + emptyMsg + '</p>';
+    feed.innerHTML    = '<div class="empty-state"><p>' + emptyMsg + '</p><div class="empty-state-actions">' + emptyCta + '</div></div>';
     tocList.innerHTML = '';
     return;
   }
@@ -1032,9 +1059,11 @@ function renderJournal() {
         : 'Q';
       return (
         '<li class="toc-item" data-scroll-target="journal-quote-' + escapeHtml(item.quote.id) + '">' +
-          '<span class="toc-num">' + num + '</span>' +
-          '<span class="toc-label">' + escapeHtml(label) + '</span>' +
-          '<span class="toc-badge">' + badge + '</span>' +
+          '<button type="button" class="toc-btn">' +
+            '<span class="toc-num">' + num + '</span>' +
+            '<span class="toc-label">' + escapeHtml(label) + '</span>' +
+            '<span class="toc-badge">' + badge + '</span>' +
+          '</button>' +
         '</li>'
       );
     }).join('');
@@ -1065,9 +1094,11 @@ function renderJournal() {
       : ('journal-quote-' + escapeHtml(sortedQ[0].id));
     return (
       '<li class="toc-item" data-scroll-target="' + targetId + '">' +
-        '<span class="toc-num">' + num + '</span>' +
-        '<span class="toc-label">' + escapeHtml(anime.title) + '</span>' +
-        '<span class="toc-badge">' + badge + '</span>' +
+        '<button type="button" class="toc-btn">' +
+          '<span class="toc-num">' + num + '</span>' +
+          '<span class="toc-label">' + escapeHtml(anime.title) + '</span>' +
+          '<span class="toc-badge">' + badge + '</span>' +
+        '</button>' +
       '</li>'
     );
   }).join('');
@@ -1216,7 +1247,10 @@ function navigateTo(sectionId, updateHash, detailId) {
   }
 
   document.getElementById('main-nav').classList.remove('open');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  var navToggleBtn = document.getElementById('nav-toggle');
+  if (navToggleBtn) navToggleBtn.setAttribute('aria-expanded', 'false');
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
 }
 
 /**
@@ -1285,7 +1319,8 @@ document.addEventListener('click', function(e) {
 
 // Mobile hamburger
 document.getElementById('nav-toggle').addEventListener('click', function() {
-  document.getElementById('main-nav').classList.toggle('open');
+  var isOpen = document.getElementById('main-nav').classList.toggle('open');
+  this.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
 });
 
 
@@ -1335,16 +1370,42 @@ function openEditModal(animeId) {
   showModal('modal-overlay');
 }
 
+var lastFocusedBeforeModal = null;
+
+function getFocusableInModal(modalEl) {
+  return Array.prototype.slice.call(
+    modalEl.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+  ).filter(function(el) {
+    return el.offsetParent !== null;
+  });
+}
+
 function showModal(id) {
-  document.getElementById(id).classList.add('modal-visible');
+  var modalEl = document.getElementById(id);
+  if (!modalEl) return;
+  if (!document.querySelector('.modal-overlay.modal-visible')) {
+    lastFocusedBeforeModal = document.activeElement;
+  }
+  modalEl.classList.add('modal-visible');
   document.body.classList.add('modal-open');
+  setTimeout(function() {
+    var focusables = getFocusableInModal(modalEl);
+    if (focusables.length > 0) focusables[0].focus();
+  }, 20);
 }
 
 function hideModal(id) {
-  document.getElementById(id).classList.remove('modal-visible');
+  var modalEl = document.getElementById(id);
+  if (modalEl) modalEl.classList.remove('modal-visible');
   // Only remove scroll-lock when no other modal is still open
   var anyVisible = document.querySelector('.modal-overlay.modal-visible');
-  if (!anyVisible) document.body.classList.remove('modal-open');
+  if (!anyVisible) {
+    document.body.classList.remove('modal-open');
+    if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+      lastFocusedBeforeModal.focus();
+    }
+    lastFocusedBeforeModal = null;
+  }
 }
 
 function clearFormErrors() {
@@ -1705,13 +1766,31 @@ document.getElementById('anime-grid').addEventListener('click', function(e) {
   navigateTo('details', true, id);
 });
 
-// Close open modals with Escape key
+// Close open modals with Escape key & trap Tab inside visible modal
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     // Use closeSearchModal so debounce/abort cleanup always runs
     closeSearchModal();
     hideModal('modal-overlay');
     hideModal('confirm-overlay');
+    pendingImportEntries = null;
+    hideModal('import-overlay');
+    return;
+  }
+  if (e.key === 'Tab') {
+    var activeModal = document.querySelector('.modal-overlay.modal-visible');
+    if (!activeModal) return;
+    var focusables = getFocusableInModal(activeModal);
+    if (focusables.length === 0) return;
+    var first = focusables[0];
+    var last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   }
 });
 
@@ -2704,6 +2783,202 @@ document.getElementById('import-merge').addEventListener('click', function() {
   stateCommit();
   showToast('Merged backup: ' + added + ' added, ' + updated + ' updated.', 'success');
 });
+
+
+/* ── 5.11 DEMO DATA ── */
+
+function loadDemoData() {
+  if (state.library.length > 0) return;
+  var now = Date.now();
+  var day = 86400000;
+  state.library = [
+    {
+      id: 'demo-frieren',
+      anilistId: null,
+      title: "Frieren: Beyond Journey's End",
+      posterUrl: '',
+      totalEps: 28,
+      watchedEps: 18,
+      status: 'watching',
+      format: 'TV',
+      releaseYear: 2023,
+      airingStatus: 'FINISHED',
+      genre: 'Adventure, Fantasy',
+      rating: 10,
+      review: 'A meditative story about memory, grief, and learning to appreciate fleeting moments.',
+      notes: '',
+      addedAt: now - 5 * day,
+      updatedAt: now - 1 * day,
+      autoCompleted: false,
+      demo: true,
+      quotes: [
+        { id: 'dq-1', text: 'It was just a mere ten-year adventure.', speaker: 'Frieren', episode: 1, createdAt: now - 4 * day },
+        { id: 'dq-2', text: 'What makes a hero is not strength, but the memories you leave behind.', speaker: 'Himmel', episode: 12, createdAt: now - 2 * day }
+      ]
+    },
+    {
+      id: 'demo-one-piece',
+      anilistId: null,
+      title: 'One Piece',
+      posterUrl: '',
+      totalEps: null,
+      watchedEps: 1086,
+      status: 'watching',
+      format: 'TV',
+      releaseYear: 1999,
+      airingStatus: 'RELEASING',
+      genre: 'Action, Adventure',
+      rating: 9,
+      review: '',
+      notes: '',
+      addedAt: now - 10 * day,
+      updatedAt: now - 2 * day,
+      autoCompleted: false,
+      demo: true,
+      quotes: [
+        { id: 'dq-3', text: 'If you do not take risks, you cannot create a future.', speaker: 'Monkey D. Luffy', episode: 400, createdAt: now - 1 * day }
+      ]
+    },
+    {
+      id: 'demo-bebop',
+      anilistId: null,
+      title: 'Cowboy Bebop',
+      posterUrl: '',
+      totalEps: 26,
+      watchedEps: 26,
+      status: 'completed',
+      format: 'TV',
+      releaseYear: 1998,
+      airingStatus: 'FINISHED',
+      genre: 'Sci-Fi, Action',
+      rating: 10,
+      review: 'Timeless jazz noir in space. Every episode feels like a standalone short film.',
+      notes: '',
+      addedAt: now - 20 * day,
+      updatedAt: now - 15 * day,
+      autoCompleted: true,
+      demo: true,
+      quotes: [
+        { id: 'dq-4', text: "You're gonna carry that weight.", speaker: 'Title Card', episode: 26, createdAt: now - 15 * day }
+      ]
+    },
+    {
+      id: 'demo-spirited',
+      anilistId: null,
+      title: 'Spirited Away',
+      posterUrl: '',
+      totalEps: 1,
+      watchedEps: 1,
+      status: 'completed',
+      format: 'MOVIE',
+      releaseYear: 2001,
+      airingStatus: 'FINISHED',
+      genre: 'Fantasy, Mystery',
+      rating: 9,
+      review: '',
+      notes: '',
+      addedAt: now - 12 * day,
+      updatedAt: now - 12 * day,
+      autoCompleted: true,
+      demo: true,
+      quotes: []
+    },
+    {
+      id: 'demo-vinland',
+      anilistId: null,
+      title: 'Vinland Saga',
+      posterUrl: '',
+      totalEps: 24,
+      watchedEps: 0,
+      status: 'plan',
+      format: 'TV',
+      releaseYear: 2019,
+      airingStatus: 'FINISHED',
+      genre: 'Action, Drama',
+      rating: null,
+      review: '',
+      notes: '',
+      addedAt: now - 3 * day,
+      updatedAt: now - 3 * day,
+      autoCompleted: false,
+      demo: true,
+      quotes: []
+    },
+    {
+      id: 'demo-mob',
+      anilistId: null,
+      title: 'Mob Psycho 100',
+      posterUrl: '',
+      totalEps: 12,
+      watchedEps: 12,
+      status: 'completed',
+      format: 'TV',
+      releaseYear: 2016,
+      airingStatus: 'FINISHED',
+      genre: 'Action, Comedy',
+      rating: 8,
+      review: '',
+      notes: '',
+      addedAt: now - 8 * day,
+      updatedAt: now - 8 * day,
+      autoCompleted: true,
+      demo: true,
+      quotes: []
+    },
+    {
+      id: 'demo-dropped-ex',
+      anilistId: null,
+      title: 'Glasslip',
+      posterUrl: '',
+      totalEps: 13,
+      watchedEps: 4,
+      status: 'dropped',
+      format: 'TV',
+      releaseYear: 2014,
+      airingStatus: 'FINISHED',
+      genre: 'Slice of Life',
+      rating: null,
+      review: '',
+      notes: '',
+      addedAt: now - 18 * day,
+      updatedAt: now - 18 * day,
+      autoCompleted: false,
+      demo: true,
+      quotes: []
+    }
+  ];
+  stateCommit();
+  showToast('Loaded 7 sample demo entries.', 'success');
+}
+
+function removeDemoData() {
+  var before = state.library.length;
+  state.library = state.library.filter(function(a) { return a.demo !== true; });
+  var removed = before - state.library.length;
+  if (state.currentAnimeId && !findAnimeById(state.currentAnimeId)) {
+    state.currentAnimeId = null;
+    document.getElementById('details-content').innerHTML = '';
+    if (window.location.hash.indexOf('#details') === 0) navigateTo('library');
+  }
+  stateCommit();
+  showToast('Removed ' + removed + ' demo ' + (removed === 1 ? 'entry' : 'entries') + '.', 'info');
+}
+
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.load-demo-btn')) {
+    loadDemoData();
+    return;
+  }
+  if (e.target.closest('.empty-add-btn')) {
+    openSearchModal();
+    return;
+  }
+});
+
+var removeDemoBtnEl = document.getElementById('remove-demo-btn');
+if (removeDemoBtnEl) {
+  removeDemoBtnEl.addEventListener('click', removeDemoData);
+}
 
 
 /* ═══════════════════════════════════════════════════════════
