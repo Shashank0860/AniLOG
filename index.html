@@ -380,14 +380,42 @@
   </main>
 
   <!-- ═══════════════════════════════════════════════
+       MODAL — Import Backup
+  ═══════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="import-overlay" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-panel modal-panel--sm">
+      <div class="modal-header">
+        <h2 class="modal-title" id="import-modal-title">Import Backup</h2>
+        <button class="modal-close" id="import-close" aria-label="Close">✕</button>
+      </div>
+      <p class="confirm-message" id="import-summary"></p>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="import-cancel">Cancel</button>
+        <button type="button" class="btn-secondary" id="import-merge">Merge (by ID)</button>
+        <button type="button" class="btn-primary" id="import-replace">Replace All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
        SITE FOOTER
   ═══════════════════════════════════════════════ -->
   <footer class="site-footer">
     <div class="footer-inner">
-      <span class="footer-logo">[ ANILOG ]</span>
-      <span class="footer-tagline">Your story, your log. — 物語は続く</span>
+      <div class="footer-brand">
+        <span class="footer-logo">[ ANILOG ]</span>
+        <span class="footer-tagline">Your story, your log. — 物語は続く</span>
+      </div>
+      <div class="footer-actions">
+        <button type="button" class="footer-btn" id="export-data-btn">Export Data</button>
+        <button type="button" class="footer-btn" id="import-data-btn">Import Data</button>
+        <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" />
+      </div>
     </div>
   </footer>
+
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <script src="app.js"></script>
 </body>

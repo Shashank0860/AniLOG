@@ -31,6 +31,44 @@
 ═══════════════════════════════════════════════════════════ */
 
 var STORAGE_KEY = 'anilog_library';
+var SCHEMA_VERSION = 2;
+
+/**
+ * Displays a non-blocking manga-styled toast notification.
+ * @param {string} message
+ * @param {'info'|'success'|'warning'|'error'} [type='info']
+ * @param {number} [duration=4500]  0 keeps toast until manually dismissed
+ */
+function showToast(message, type, duration) {
+  var container = document.getElementById('toast-container');
+  if (!container) return;
+  var toast = document.createElement('div');
+  toast.className = 'toast toast--' + (type || 'info');
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+  var textSpan = document.createElement('span');
+  textSpan.textContent = message;
+
+  var closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'toast-close';
+  closeBtn.setAttribute('aria-label', 'Dismiss notification');
+  closeBtn.textContent = '✕';
+  closeBtn.addEventListener('click', function() {
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  });
+
+  toast.appendChild(textSpan);
+  toast.appendChild(closeBtn);
+  container.appendChild(toast);
+
+  var ms = typeof duration === 'number' ? duration : 4500;
+  if (ms > 0) {
+    setTimeout(function() {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, ms);
+  }
+}
 
 /**
  * Sanitizes a raw quotes array from LocalStorage.
@@ -66,63 +104,119 @@ function sanitizeQuotes(rawQuotes) {
 }
 
 /**
- * Loads the anime array from LocalStorage.
- * Returns an empty array if nothing is stored or data is invalid.
+ * Sanitizes an array of raw anime entries and ensures stable unique IDs.
+ * @param {Array} rawArray
+ * @returns {Array}
+ */
+function sanitizeLibraryEntries(rawArray) {
+  if (!Array.isArray(rawArray)) return [];
+  return rawArray
+    .filter(function(item) {
+      return item && typeof item === 'object' && typeof item.title === 'string' && item.title.trim() !== '';
+    })
+    .map(function(item) {
+      var parsedTotal = item.totalEps === null ? null : parseInt(item.totalEps, 10);
+      var totalEps    = (parsedTotal === null || isNaN(parsedTotal)) ? null : Math.max(1, parsedTotal);
+      var rawWatched  = Math.max(0, parseInt(item.watchedEps, 10) || 0);
+      var watchedEps  = totalEps !== null ? Math.min(totalEps, rawWatched) : rawWatched;
+      var rating      = Math.min(10, Math.max(0, parseInt(item.rating, 10) || 0));
+      var anilistId   = typeof item.anilistId === 'number' ? item.anilistId : null;
+      var stableId    = (item.id && String(item.id).trim())
+        ? String(item.id).trim()
+        : (anilistId !== null ? 'anilist-' + anilistId : generateId());
+
+      return {
+        id:            stableId,
+        anilistId:     anilistId,
+        title:         item.title.trim(),
+        posterUrl:     typeof item.posterUrl === 'string' ? item.posterUrl.trim() : '',
+        totalEps:      totalEps,
+        watchedEps:    watchedEps,
+        status:        ['watching', 'completed', 'plan', 'dropped'].indexOf(item.status) !== -1 ? item.status : 'plan',
+        format:        typeof item.format === 'string' ? item.format : '',
+        releaseYear:   typeof item.releaseYear === 'number' ? item.releaseYear : null,
+        airingStatus:  typeof item.airingStatus === 'string' ? item.airingStatus : '',
+        genre:         typeof item.genre === 'string' ? item.genre.trim() : '',
+        rating:        rating,
+        review:        typeof item.review === 'string' ? item.review : '',
+        notes:         typeof item.notes === 'string' ? item.notes : '',
+        addedAt:       typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
+        updatedAt:     typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now()),
+        autoCompleted: item.autoCompleted === true,
+        quotes:        sanitizeQuotes(item.quotes)
+      };
+    });
+}
+
+/**
+ * Loads the anime array from LocalStorage, handling schema migration and corrupt data backup.
  * @returns {Array}
  */
 function storageLoad() {
+  var raw = null;
   try {
-    var raw = localStorage.getItem(STORAGE_KEY);
+    raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     var parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Sanitize each entry so malformed objects never break rendering
-    return parsed
-      .filter(function(item) {
-        return item && typeof item === 'object' && typeof item.title === 'string' && item.title.trim() !== '';
-      })
-      .map(function(item) {
-        var parsedTotal = item.totalEps === null ? null : parseInt(item.totalEps, 10);
-        var totalEps    = (parsedTotal === null || isNaN(parsedTotal)) ? null : Math.max(1, parsedTotal);
-        var rawWatched  = Math.max(0, parseInt(item.watchedEps, 10) || 0);
-        var watchedEps  = totalEps !== null ? Math.min(totalEps, rawWatched) : rawWatched;
-        var rating      = Math.min(10, Math.max(0, parseInt(item.rating, 10) || 0));
-        return {
-          id:           String(item.id || generateId()),
-          anilistId:    typeof item.anilistId === 'number' ? item.anilistId : null,
-          title:        item.title.trim(),
-          posterUrl:    typeof item.posterUrl === 'string' ? item.posterUrl.trim() : '',
-          totalEps:     totalEps,
-          watchedEps:   watchedEps,
-          status:       ['watching', 'completed', 'plan', 'dropped'].indexOf(item.status) !== -1 ? item.status : 'plan',
-          format:       typeof item.format === 'string' ? item.format : '',
-          releaseYear:  typeof item.releaseYear === 'number' ? item.releaseYear : null,
-          airingStatus: typeof item.airingStatus === 'string' ? item.airingStatus : '',
-          genre:        typeof item.genre === 'string' ? item.genre.trim() : '',
-          rating:       rating,
-          review:       typeof item.review === 'string' ? item.review : '',
-          notes:        typeof item.notes === 'string' ? item.notes : '',
-          addedAt:      typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
-          updatedAt:    typeof item.updatedAt === 'number' ? item.updatedAt : (typeof item.addedAt === 'number' ? item.addedAt : Date.now()),
-          autoCompleted: item.autoCompleted === true,
-          quotes:       sanitizeQuotes(item.quotes)
-        };
-      });
+
+    var rawEntries = null;
+    var needsMigration = false;
+
+    if (Array.isArray(parsed)) {
+      // Legacy v1 format (raw array without schemaVersion)
+      rawEntries = parsed;
+      needsMigration = true;
+    } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.library)) {
+      rawEntries = parsed.library;
+      if ((parsed.schemaVersion || 1) < SCHEMA_VERSION) {
+        needsMigration = true;
+      }
+    } else {
+      throw new Error('Unexpected storage schema');
+    }
+
+    var sanitized = sanitizeLibraryEntries(rawEntries);
+    if (needsMigration) {
+      storageSave(sanitized, true);
+    }
+    return sanitized;
   } catch (e) {
-    console.warn('[AniLog] Could not parse stored data. Starting fresh.', e);
+    console.warn('[AniLOG] Corrupt or unreadable stored data. Backing up and starting fresh.', e);
+    if (raw) {
+      try {
+        localStorage.setItem(STORAGE_KEY + ':corrupt-backup', raw);
+      } catch (backupErr) {
+        console.error('[AniLOG] Could not write corrupt backup.', backupErr);
+      }
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, library: [] }));
+    } catch (resetErr) {
+      // ignore if storage is completely blocked
+    }
+    state.corruptBackupNotice = true;
     return [];
   }
 }
 
 /**
- * Saves the current anime array to LocalStorage.
+ * Saves the current anime array with schemaVersion to LocalStorage.
  * @param {Array} library
+ * @param {boolean} [silent=false]
  */
-function storageSave(library) {
+function storageSave(library, silent) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      schemaVersion: SCHEMA_VERSION,
+      library: library
+    }));
+    return true;
   } catch (e) {
-    console.error('[AniLog] Could not save to LocalStorage.', e);
+    console.error('[AniLOG] Could not save to LocalStorage.', e);
+    if (!silent) {
+      showToast('Could not save changes — browser storage may be full or blocked.', 'error');
+    }
+    return false;
   }
 }
 
@@ -168,6 +262,9 @@ function stateCommit() {
  * @returns {string}
  */
 function generateId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
@@ -2299,6 +2396,153 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
 
 
 /* ═══════════════════════════════════════════════════════════
+   5.10 EXPORT & IMPORT BACKUP
+═══════════════════════════════════════════════════════════ */
+
+var pendingImportEntries = null;
+
+function exportLibraryBackup() {
+  var now = new Date();
+  var yyyy = now.getFullYear();
+  var mm = String(now.getMonth() + 1).padStart(2, '0');
+  var dd = String(now.getDate()).padStart(2, '0');
+  var filename = 'anilog-backup-' + yyyy + '-' + mm + '-' + dd + '.json';
+
+  var payload = {
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: now.toISOString(),
+    library: state.library
+  };
+
+  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Exported ' + state.library.length + ' anime entries to ' + filename + '.', 'success');
+}
+
+function handleImportFile(file) {
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      var parsed = JSON.parse(ev.target.result);
+      var rawEntries = null;
+      if (Array.isArray(parsed)) {
+        rawEntries = parsed;
+      } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.library)) {
+        if (parsed.schemaVersion !== undefined && (typeof parsed.schemaVersion !== 'number' || parsed.schemaVersion < 1)) {
+          throw new Error('Invalid schemaVersion.');
+        }
+        rawEntries = parsed.library;
+      } else {
+        throw new Error('Backup must contain a library array.');
+      }
+
+      // Validate required fields on every entry
+      for (var i = 0; i < rawEntries.length; i++) {
+        var entry = rawEntries[i];
+        if (!entry || typeof entry !== 'object' || typeof entry.title !== 'string' || !entry.title.trim()) {
+          throw new Error('Entry #' + (i + 1) + ' is missing a valid title.');
+        }
+      }
+
+      var sanitized = sanitizeLibraryEntries(rawEntries);
+      var reviewCount = sanitized.filter(function(a) { return a.review && a.review.trim() !== ''; }).length;
+      var quoteCount = sanitized.reduce(function(sum, a) { return sum + (Array.isArray(a.quotes) ? a.quotes.length : 0); }, 0);
+
+      pendingImportEntries = sanitized;
+      document.getElementById('import-summary').textContent =
+        'Ready to import ' + sanitized.length + ' anime entries (' +
+        reviewCount + ' reviews, ' + quoteCount + ' quotes). ' +
+        'Choose Merge to combine by ID, or Replace All to overwrite your current library.';
+      showModal('import-overlay');
+    } catch (err) {
+      pendingImportEntries = null;
+      showToast('Invalid backup file: ' + (err && err.message ? err.message : 'could not parse JSON.'), 'error', 6000);
+    }
+  };
+  reader.onerror = function() {
+    showToast('Could not read the selected file.', 'error');
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('export-data-btn').addEventListener('click', exportLibraryBackup);
+
+document.getElementById('import-data-btn').addEventListener('click', function() {
+  var fileInput = document.getElementById('import-file-input');
+  fileInput.value = '';
+  fileInput.click();
+});
+
+document.getElementById('import-file-input').addEventListener('change', function() {
+  if (this.files && this.files[0]) {
+    handleImportFile(this.files[0]);
+  }
+});
+
+document.getElementById('import-close').addEventListener('click', function() {
+  pendingImportEntries = null;
+  hideModal('import-overlay');
+});
+
+document.getElementById('import-cancel').addEventListener('click', function() {
+  pendingImportEntries = null;
+  hideModal('import-overlay');
+});
+
+document.getElementById('import-overlay').addEventListener('click', function(e) {
+  if (e.target === this) {
+    pendingImportEntries = null;
+    hideModal('import-overlay');
+  }
+});
+
+document.getElementById('import-replace').addEventListener('click', function() {
+  if (!pendingImportEntries) return;
+  state.library = pendingImportEntries;
+  state.currentAnimeId = null;
+  var count = pendingImportEntries.length;
+  pendingImportEntries = null;
+  hideModal('import-overlay');
+  stateCommit();
+  showToast('Replaced library with ' + count + ' imported entries.', 'success');
+});
+
+document.getElementById('import-merge').addEventListener('click', function() {
+  if (!pendingImportEntries) return;
+  var byId = {};
+  state.library.forEach(function(item, idx) { byId[item.id] = idx; });
+  var added = 0;
+  var updated = 0;
+  pendingImportEntries.forEach(function(entry) {
+    if (Object.prototype.hasOwnProperty.call(byId, entry.id)) {
+      state.library[byId[entry.id]] = entry;
+      updated++;
+    } else if (entry.anilistId !== null && findAnimeByAnilistId(entry.anilistId)) {
+      var existing = findAnimeByAnilistId(entry.anilistId);
+      var idx = state.library.indexOf(existing);
+      if (idx !== -1) state.library[idx] = entry;
+      updated++;
+    } else {
+      state.library.push(entry);
+      added++;
+    }
+  });
+  pendingImportEntries = null;
+  hideModal('import-overlay');
+  stateCommit();
+  showToast('Merged backup: ' + added + ' added, ' + updated + ' updated.', 'success');
+});
+
+
+/* ═══════════════════════════════════════════════════════════
    BOOT — initialise on page load
 ═══════════════════════════════════════════════════════════ */
 // Global capture-phase listener for broken poster images (replaces inline onerror)
@@ -2315,4 +2559,7 @@ document.addEventListener('error', function(e) {
 stateInit();
 renderAll();
 syncFromHash();
+if (state.corruptBackupNotice) {
+  showToast('Saved data was corrupted and backed up to "' + STORAGE_KEY + ':corrupt-backup". Started with an empty library.', 'warning', 0);
+}
 console.log('[AniLog] Ready. Library:', state.library.length, 'entries.');
