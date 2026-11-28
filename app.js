@@ -1,5 +1,5 @@
 /**
- * AniLog — app.js
+ * AniLOG — app.js
  * Phase 2: Full application logic + LocalStorage persistence.
  *
  * File is organised into five clear sections:
@@ -3001,4 +3001,4 @@ syncFromHash();
 if (state.corruptBackupNotice) {
   showToast('Saved data was corrupted and backed up to "' + STORAGE_KEY + ':corrupt-backup". Started with an empty library.', 'warning', 0);
 }
-console.log('[AniLog] Ready. Library:', state.library.length, 'entries.');
+console.log('[AniLOG] Ready. Library:', state.library.length, 'entries.');
