@@ -542,7 +542,8 @@ function renderAll() {
     var anime = findAnimeById(state.currentAnimeId);
     if (anime) renderDetails(anime);
     else {
-      // Anime was deleted — go back to library
+      // Anime was deleted — clear details and go back to library
+      state.currentAnimeId = null;
       document.getElementById('details-content').innerHTML = '';
       navigateTo('library');
     }
@@ -1170,11 +1171,24 @@ var VALID_SECTIONS = ['dashboard', 'library', 'details', 'journal'];
  * @param {string} sectionId
  * @param {boolean} [updateHash=true]
  */
-function navigateTo(sectionId, updateHash) {
+function navigateTo(sectionId, updateHash, detailId) {
   if (VALID_SECTIONS.indexOf(sectionId) === -1) {
     sectionId = 'dashboard';
   }
   if (sectionId !== 'details') editingQuoteId = null;
+
+  if (sectionId === 'details' && detailId) {
+    state.currentAnimeId = detailId;
+  }
+
+  // Hide Anime Details nav link unless details route is active
+  var detailsNavLink = document.querySelector('.nav-link[data-section="details"]');
+  if (detailsNavLink) {
+    detailsNavLink.style.display = sectionId === 'details' ? '' : 'none';
+    if (sectionId === 'details' && state.currentAnimeId) {
+      detailsNavLink.setAttribute('href', '#details/' + encodeURIComponent(state.currentAnimeId));
+    }
+  }
 
   // Ensure #details has a helpful message if opened directly with no anime selected
   if (sectionId === 'details' && !state.currentAnimeId) {
@@ -1193,8 +1207,12 @@ function navigateTo(sectionId, updateHash) {
     link.classList.toggle('active', link.dataset.section === sectionId);
   });
 
-  if (updateHash !== false && window.location.hash !== '#' + sectionId) {
-    window.location.hash = '#' + sectionId;
+  var targetHash = (sectionId === 'details' && state.currentAnimeId)
+    ? '#details/' + encodeURIComponent(state.currentAnimeId)
+    : '#' + sectionId;
+
+  if (updateHash !== false && window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
   }
 
   document.getElementById('main-nav').classList.remove('open');
@@ -1203,15 +1221,49 @@ function navigateTo(sectionId, updateHash) {
 
 /**
  * Reads the current URL hash and activates the matching section.
- * On initial load with no hash, sets #dashboard.
+ * Routes: #dashboard, #library, #journal, #details/<id>
  */
 function syncFromHash() {
-  var hash = window.location.hash.replace('#', '').trim();
+  var hash = window.location.hash.replace(/^#\/?/, '').trim();
   if (!hash) {
     navigateTo('dashboard', true);
     return;
   }
-  var targetSection = VALID_SECTIONS.indexOf(hash) !== -1 ? hash : 'dashboard';
+
+  if (hash === 'details' || hash === 'details/') {
+    state.currentAnimeId = null;
+    document.getElementById('details-content').innerHTML = '';
+    navigateTo('library', true);
+    return;
+  }
+
+  if (hash.indexOf('details/') === 0) {
+    var rawId = hash.slice('details/'.length);
+    var animeId = rawId;
+    try {
+      animeId = decodeURIComponent(rawId);
+    } catch (e) {
+      animeId = rawId;
+    }
+    var anime = findAnimeById(animeId);
+    if (!anime) {
+      state.currentAnimeId = null;
+      document.getElementById('details-content').innerHTML = '';
+      showToast('Anime not found.', 'warning');
+      navigateTo('library', true);
+      return;
+    }
+    state.currentAnimeId = anime.id;
+    renderDetails(anime);
+    navigateTo('details', false, anime.id);
+    return;
+  }
+
+  var targetSection = (hash === 'dashboard' || hash === 'library' || hash === 'journal') ? hash : 'dashboard';
+  if (targetSection !== hash) {
+    navigateTo('dashboard', true);
+    return;
+  }
   navigateTo(targetSection, false);
 }
 
@@ -1576,7 +1628,10 @@ document.getElementById('confirm-delete').addEventListener('click', function() {
   if (!pendingDeleteId) return;
   // Remove the anime from the array
   state.library = state.library.filter(function(a) { return a.id !== pendingDeleteId; });
-  if (state.currentAnimeId === pendingDeleteId) state.currentAnimeId = null;
+  if (state.currentAnimeId === pendingDeleteId) {
+    state.currentAnimeId = null;
+    document.getElementById('details-content').innerHTML = '';
+  }
   pendingDeleteId = null;
   hideModal('confirm-overlay');
   stateCommit();
@@ -1647,7 +1702,7 @@ document.getElementById('anime-grid').addEventListener('click', function(e) {
   if (!anime) return;
   state.currentAnimeId = id;
   renderDetails(anime);
-  navigateTo('details');
+  navigateTo('details', true, id);
 });
 
 // Close open modals with Escape key
@@ -1680,7 +1735,7 @@ document.getElementById('dashboard-completed').addEventListener('click', functio
   if (!anime) return;
   state.currentAnimeId = id;
   renderDetails(anime);
-  navigateTo('details');
+  navigateTo('details', true, id);
 });
 
 
@@ -1993,7 +2048,7 @@ document.getElementById('journal-feed').addEventListener('click', function(e) {
   if (!anime) return;
   state.currentAnimeId = id;
   renderDetails(anime);
-  navigateTo('details');
+  navigateTo('details', true, id);
 });
 
 
@@ -2352,7 +2407,7 @@ document.getElementById('selected-anime-preview').addEventListener('click', func
   closeSearchModal();
   state.currentAnimeId = anime.id;
   renderDetails(anime);
-  navigateTo('details');
+  navigateTo('details', true, anime.id);
 });
 
 // Back to results
