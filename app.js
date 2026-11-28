@@ -314,7 +314,8 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
@@ -366,13 +367,14 @@ function getFilteredLibrary() {
  * @returns {string}  HTML string
  */
 function buildPosterHtml(anime, sizeClass) {
-  if (anime.posterUrl) {
-    return '<img class="poster-img ' + sizeClass + '" src="' + escapeHtml(anime.posterUrl) +
-           '" alt="Poster for ' + escapeHtml(anime.title) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
-           '<div class="poster-placeholder ' + sizeClass + '" style="display:none"><span class="poster-kanji">無</span></div>';
+  var safeUrl = anime.posterUrl && isValidUrl(anime.posterUrl) ? anime.posterUrl : '';
+  var kanji = (anime.title || '?').charAt(0).toUpperCase();
+  if (safeUrl) {
+    return '<img class="poster-img js-poster-img ' + sizeClass + '" src="' + escapeHtml(safeUrl) +
+           '" alt="Poster for ' + escapeHtml(anime.title) + '" loading="lazy" decoding="async">' +
+           '<div class="poster-placeholder ' + sizeClass + '" style="display:none"><span class="poster-kanji">' + escapeHtml(kanji) + '</span></div>';
   }
-  // No URL — show placeholder with first character of title
-  var kanji = anime.title.charAt(0).toUpperCase();
+  // No valid URL — show placeholder with first character of title
   return '<div class="poster-placeholder ' + sizeClass + '"><span class="poster-kanji">' + escapeHtml(kanji) + '</span></div>';
 }
 
@@ -1998,14 +2000,15 @@ function renderSearchResults(mediaList, query) {
       ? 'Movie'
       : (media.episodes !== null && media.episodes !== undefined ? media.episodes + ' eps' : '? eps');
     var airText    = formatAiringStatus(media.status);
-    var cover      = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+    var rawCover   = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+    var cover      = isValidUrl(rawCover) ? rawCover : '';
     var alreadyIn  = !!findAnimeByAnilistId(media.id);
 
     return (
       '<button type="button" class="search-result-card' + (alreadyIn ? ' is-added' : '') + '" data-anilist-id="' + media.id + '">' +
         '<div class="search-result-cover">' +
           (cover
-            ? '<img src="' + escapeHtml(cover) + '" alt="' + escapeHtml(title) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+            ? '<img class="js-poster-img" src="' + escapeHtml(cover) + '" alt="Poster for ' + escapeHtml(title) + '" loading="lazy" decoding="async">' +
               '<div class="poster-placeholder search-result-fallback" style="display:none"><span class="poster-kanji-sm">' + escapeHtml(title.charAt(0)) + '</span></div>'
             : '<div class="poster-placeholder search-result-fallback"><span class="poster-kanji-sm">' + escapeHtml(title.charAt(0)) + '</span></div>') +
           (alreadyIn ? '<span class="search-added-badge">In Library</span>' : '') +
@@ -2037,7 +2040,8 @@ function selectSearchResult(mediaId) {
   var isMovie   = media.format === 'MOVIE';
   var totalEps  = isMovie ? 1 : (typeof media.episodes === 'number' ? media.episodes : null);
   var epsLabel  = isMovie ? 'Movie (1 feature)' : (totalEps !== null ? totalEps + ' episodes' : 'Unknown (ongoing/TBA)');
-  var cover     = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+  var rawCover  = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
+  var cover     = isValidUrl(rawCover) ? rawCover : '';
   var genres    = Array.isArray(media.genres) ? media.genres.slice(0, 4).join(', ') : '';
   var existing  = findAnimeByAnilistId(media.id);
 
@@ -2048,7 +2052,8 @@ function selectSearchResult(mediaId) {
   document.getElementById('selected-anime-preview').innerHTML =
     '<div class="selected-cover">' +
       (cover
-        ? '<img src="' + escapeHtml(cover) + '" alt="' + escapeHtml(title) + '" onerror="this.style.display=\'none\'">'
+        ? '<img class="js-poster-img" src="' + escapeHtml(cover) + '" alt="Poster for ' + escapeHtml(title) + '" loading="lazy" decoding="async">' +
+          '<div class="poster-placeholder poster-lg" style="display:none"><span class="poster-kanji">' + escapeHtml(title.charAt(0)) + '</span></div>'
         : '<div class="poster-placeholder poster-lg"><span class="poster-kanji">' + escapeHtml(title.charAt(0)) + '</span></div>') +
     '</div>' +
     '<div class="selected-meta">' +
@@ -2286,6 +2291,17 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
 /* ═══════════════════════════════════════════════════════════
    BOOT — initialise on page load
 ═══════════════════════════════════════════════════════════ */
+// Global capture-phase listener for broken poster images (replaces inline onerror)
+document.addEventListener('error', function(e) {
+  var img = e.target;
+  if (img && img.tagName === 'IMG' && img.classList.contains('js-poster-img')) {
+    img.style.display = 'none';
+    if (img.nextElementSibling && img.nextElementSibling.classList.contains('poster-placeholder')) {
+      img.nextElementSibling.style.display = 'flex';
+    }
+  }
+}, true);
+
 stateInit();
 renderAll();
 syncFromHash();
