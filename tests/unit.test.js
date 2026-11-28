@@ -38,6 +38,7 @@ var localStorage = {
 /* ─── Helpers replicated from app.js ─── */
 
 var STORAGE_KEY = 'anilog_library';
+var SCHEMA_VERSION = 2;
 
 function generateId() {
   return String(Date.now()) + Math.random().toString(36).slice(2, 7);
@@ -71,21 +72,29 @@ function sanitizeQuotes(rawQuotes) {
 }
 
 function storageLoad() {
+  var raw = null;
   try {
-    var raw = localStorage.getItem(STORAGE_KEY);
+    raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     var parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
+    var rawEntries = null;
+    if (Array.isArray(parsed)) rawEntries = parsed;
+    else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.library)) rawEntries = parsed.library;
+    else throw new Error('Unexpected schema');
+
+    return rawEntries
       .filter(function(item) {
         return item && typeof item === 'object' && typeof item.title === 'string' && item.title.trim() !== '';
       })
       .map(function(item) {
         var parsedTotal = item.totalEps === null ? null : parseInt(item.totalEps, 10);
         var totalEps    = (parsedTotal === null || isNaN(parsedTotal)) ? null : Math.max(1, parsedTotal);
-        var rawWatched  = Math.max(0, parseInt(item.watchedEps, 10) || 0);
+        var rawWatched  = Math.max(0, Math.floor(Number(item.watchedEps) || 0));
         var watchedEps  = totalEps !== null ? Math.min(totalEps, rawWatched) : rawWatched;
-        var rating      = Math.min(10, Math.max(0, parseInt(item.rating, 10) || 0));
+        var parsedRating = (item.rating === null || item.rating === undefined || item.rating === '' || item.rating === 0 || item.rating === '0')
+          ? null
+          : parseInt(item.rating, 10);
+        var rating = (parsedRating === null || isNaN(parsedRating) || parsedRating < 1) ? null : Math.min(10, parsedRating);
         return {
           id:            String(item.id || generateId()),
           anilistId:     typeof item.anilistId === 'number' ? item.anilistId : null,
@@ -108,17 +117,26 @@ function storageLoad() {
         };
       });
   } catch (e) {
+    if (raw) localStorage.setItem(STORAGE_KEY + ':corrupt-backup', raw);
     return [];
   }
 }
 
 function storageSave(library) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, library: library }));
+}
+
+function getProgress(entry) {
+  var watched = Math.max(0, Math.floor(Number(entry && entry.watchedEps) || 0));
+  var total = (entry && typeof entry.totalEps === 'number' && entry.totalEps > 0) ? entry.totalEps : null;
+  if (total === null) return { watched: watched, total: null, percent: null, barWidth: 0, label: 'Ongoing' };
+  var clampedWatched = Math.min(total, watched);
+  var pct = Math.min(100, Math.round((clampedWatched / total) * 100));
+  return { watched: clampedWatched, total: total, percent: pct, barWidth: pct, label: pct + '% complete' };
 }
 
 function calcProgress(anime) {
-  if (!anime.totalEps || anime.totalEps === 0) return 0;
-  return Math.min(100, Math.round((anime.watchedEps / anime.totalEps) * 100));
+  return getProgress(anime).percent;
 }
 
 function formatTotalEps(totalEps) {
@@ -176,6 +194,7 @@ describe('storageLoad — sanitization', function() {
 
   localStorage.setItem(STORAGE_KEY, 'not-json');
   assert(storageLoad().length === 0, 'returns [] on malformed JSON');
+  assert(localStorage.getItem(STORAGE_KEY + ':corrupt-backup') === 'not-json', 'backs up corrupt JSON to :corrupt-backup');
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify([
     { title: '  Naruto  ', totalEps: 220, watchedEps: 10, status: 'watching', rating: 8, addedAt: 1000 }
@@ -218,7 +237,7 @@ describe('storageLoad — sanitization', function() {
     { title: 'Negative rating', totalEps: 1, watchedEps: 0, rating: -5 }
   ]));
   var lib6 = storageLoad();
-  assert(lib6[0].rating === 0, 'clamps negative rating to 0');
+  assert(lib6[0].rating === null, 'maps negative/0 rating to null (unrated)');
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify([
     { title: 'High rating', totalEps: 1, watchedEps: 0, rating: 100 }
@@ -239,13 +258,14 @@ describe('storageLoad — sanitization', function() {
   assert(lib9[0].autoCompleted === true, 'preserves autoCompleted: true from storage');
 });
 
-describe('calcProgress', function() {
+describe('calcProgress / getProgress', function() {
   assert(calcProgress({ totalEps: 12, watchedEps: 6 }) === 50, '6/12 = 50%');
   assert(calcProgress({ totalEps: 12, watchedEps: 12 }) === 100, '12/12 = 100%');
   assert(calcProgress({ totalEps: 12, watchedEps: 0 }) === 0, '0/12 = 0%');
-  assert(calcProgress({ totalEps: null, watchedEps: 5 }) === 0, 'null total → 0%');
-  assert(calcProgress({ totalEps: 0, watchedEps: 0 }) === 0, 'zero total → 0%');
+  assert(calcProgress({ totalEps: null, watchedEps: 5 }) === null, 'null total → null (Ongoing)');
+  assert(calcProgress({ totalEps: 0, watchedEps: 0 }) === null, 'zero total → null (Ongoing)');
   assert(calcProgress({ totalEps: 3, watchedEps: 100 }) === 100, 'caps at 100%');
+  assert(getProgress({ totalEps: null, watchedEps: 5 }).label === 'Ongoing', 'null total label is Ongoing');
 });
 
 describe('formatTotalEps', function() {
