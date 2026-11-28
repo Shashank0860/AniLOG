@@ -32,6 +32,137 @@
 
 var STORAGE_KEY = 'anilog_library';
 var SCHEMA_VERSION = 2;
+var ACTIVITY_STORAGE_KEY = 'anilog_activity';
+var ACTIVITY_SCHEMA_VERSION = 1;
+
+/**
+ * Formats a timestamp into YYYY-MM-DD in the user's local timezone.
+ * @param {number} timestamp
+ * @returns {string}
+ */
+function toLocalDateKey(timestamp) {
+  var d = new Date(timestamp);
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+/**
+ * Sanitizes raw watch activity events.
+ * @param {Array} raw
+ * @returns {Array}
+ */
+function sanitizeWatchEvents(raw) {
+  if (!Array.isArray(raw)) return [];
+  var seen = {};
+  return raw
+    .filter(function(ev) {
+      if (!ev || typeof ev !== 'object') return false;
+      if (typeof ev.title !== 'string' || !ev.title.trim()) return false;
+      var eps = parseInt(ev.episodes, 10);
+      if (isNaN(eps) || eps < 1) return false;
+      return true;
+    })
+    .map(function(ev) {
+      var id = (ev.id && String(ev.id).trim()) ? String(ev.id).trim() : generateId();
+      var ts = typeof ev.timestamp === 'number' && !isNaN(ev.timestamp) ? ev.timestamp : Date.now();
+      var prevEp = Math.max(0, Math.floor(Number(ev.prevEp) || 0));
+      var episodes = Math.max(1, Math.floor(Number(ev.episodes) || 1));
+      var newEp = typeof ev.newEp === 'number' ? Math.max(prevEp + episodes, Math.floor(ev.newEp)) : (prevEp + episodes);
+      var poster = (typeof ev.posterUrl === 'string' && isValidUrl(ev.posterUrl.trim())) ? ev.posterUrl.trim() : '';
+      var localDate = (typeof ev.localDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.localDate))
+        ? ev.localDate
+        : toLocalDateKey(ts);
+      return {
+        id:        id,
+        animeId:   typeof ev.animeId === 'string' ? ev.animeId : String(ev.animeId || ''),
+        title:     ev.title.trim(),
+        posterUrl: poster,
+        episodes:  episodes,
+        prevEp:    prevEp,
+        newEp:     newEp,
+        timestamp: ts,
+        localDate: localDate
+      };
+    })
+    .filter(function(ev) {
+      if (seen[ev.id]) return false;
+      seen[ev.id] = true;
+      return true;
+    });
+}
+
+/**
+ * Sanitizes raw completion events.
+ * @param {Array} raw
+ * @returns {Array}
+ */
+function sanitizeCompletionEvents(raw) {
+  if (!Array.isArray(raw)) return [];
+  var seen = {};
+  return raw
+    .filter(function(ev) {
+      return ev && typeof ev === 'object' && typeof ev.title === 'string' && ev.title.trim() !== '';
+    })
+    .map(function(ev) {
+      var id = (ev.id && String(ev.id).trim()) ? String(ev.id).trim() : generateId();
+      var ts = typeof ev.timestamp === 'number' && !isNaN(ev.timestamp) ? ev.timestamp : Date.now();
+      var poster = (typeof ev.posterUrl === 'string' && isValidUrl(ev.posterUrl.trim())) ? ev.posterUrl.trim() : '';
+      var localDate = (typeof ev.localDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.localDate))
+        ? ev.localDate
+        : toLocalDateKey(ts);
+      return {
+        id:        id,
+        animeId:   typeof ev.animeId === 'string' ? ev.animeId : String(ev.animeId || ''),
+        title:     ev.title.trim(),
+        posterUrl: poster,
+        format:    typeof ev.format === 'string' ? ev.format : '',
+        timestamp: ts,
+        localDate: localDate
+      };
+    })
+    .filter(function(ev) {
+      if (seen[ev.id]) return false;
+      seen[ev.id] = true;
+      return true;
+    });
+}
+
+function activityLoad() {
+  var raw = null;
+  try {
+    raw = localStorage.getItem(ACTIVITY_STORAGE_KEY);
+    if (!raw) return { watchEvents: [], completionEvents: [] };
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') throw new Error('Invalid activity schema');
+    return {
+      watchEvents:      sanitizeWatchEvents(parsed.watchEvents),
+      completionEvents: sanitizeCompletionEvents(parsed.completionEvents)
+    };
+  } catch (e) {
+    console.warn('[AniLOG] Corrupt activity data. Backing up and starting fresh.', e);
+    if (raw) {
+      try { localStorage.setItem(ACTIVITY_STORAGE_KEY + ':corrupt-backup', raw); } catch (err) {}
+    }
+    return { watchEvents: [], completionEvents: [] };
+  }
+}
+
+function activitySave(activity) {
+  try {
+    localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify({
+      schemaVersion:    ACTIVITY_SCHEMA_VERSION,
+      watchEvents:      activity.watchEvents || [],
+      completionEvents: activity.completionEvents || []
+    }));
+    return true;
+  } catch (e) {
+    console.error('[AniLOG] Could not save activity to LocalStorage.', e);
+    showToast('Could not save watch activity — browser storage may be full or blocked.', 'error');
+    return false;
+  }
+}
 
 /**
  * Displays a non-blocking manga-styled toast notification.
@@ -235,17 +366,73 @@ function storageSave(library, silent) {
 
 var state = {
   library:        [],   // full anime array
+  activity:       { watchEvents: [], completionEvents: [] },
   activeTab:      'all',
   searchQuery:    '',
   sortBy:         'added',
   statusFilter:   'all',
   journalFilter:  'all', // 'all' | 'reviews' | 'quotes'
+  insightsTab:    'timeline', // 'timeline' | 'overview' | 'recap'
+  timelineFilter: 'all', // 'all' | 'week' | 'month' | 'year'
+  timelineLimit:  20,
+  chartPeriod:    'daily', // 'daily' | 'weekly' | 'monthly' | 'yearly'
+  recapYear:      new Date().getFullYear(),
   currentAnimeId: null  // id of the anime shown in Details
 };
 
 /** Load persisted data into state at startup. */
 function stateInit() {
-  state.library = storageLoad();
+  state.library  = storageLoad();
+  state.activity = activityLoad();
+}
+
+/**
+ * Records a watch activity event when watched episodes increase.
+ * @param {Object} anime
+ * @param {number} prevEp
+ * @param {number} newEp
+ */
+function recordWatchActivity(anime, prevEp, newEp) {
+  if (!anime || newEp <= prevEp) return;
+  var now = Date.now();
+  var ev = {
+    id:        generateId(),
+    animeId:   anime.id,
+    title:     anime.title,
+    posterUrl: (anime.posterUrl && isValidUrl(anime.posterUrl)) ? anime.posterUrl : '',
+    episodes:  newEp - prevEp,
+    prevEp:    prevEp,
+    newEp:     newEp,
+    timestamp: now,
+    localDate: toLocalDateKey(now)
+  };
+  state.activity.watchEvents.unshift(ev);
+  activitySave(state.activity);
+}
+
+/**
+ * Records a completion event when an anime transitions to 'completed'.
+ * Preserves prior completion history if status is toggled away and back.
+ * @param {Object} anime
+ */
+function recordCompletionEvent(anime) {
+  if (!anime) return;
+  var now = Date.now();
+  var today = toLocalDateKey(now);
+  var alreadyToday = state.activity.completionEvents.some(function(c) {
+    return c.animeId === anime.id && c.localDate === today;
+  });
+  if (alreadyToday) return;
+  state.activity.completionEvents.unshift({
+    id:        generateId(),
+    animeId:   anime.id,
+    title:     anime.title,
+    posterUrl: (anime.posterUrl && isValidUrl(anime.posterUrl)) ? anime.posterUrl : '',
+    format:    anime.format || '',
+    timestamp: now,
+    localDate: today
+  });
+  activitySave(state.activity);
 }
 
 /**
@@ -538,6 +725,7 @@ function renderAll() {
   renderLibrary();
   renderTabCounts();
   renderJournal();
+  if (typeof renderInsights === 'function') renderInsights();
   var removeDemoBtn = document.getElementById('remove-demo-btn');
   if (removeDemoBtn) {
     var hasDemo = state.library.some(function(a) { return a.demo === true; });
@@ -1194,7 +1382,7 @@ function renderJournal() {
 
 /* ── 5.1 Navigation ── */
 
-var VALID_SECTIONS = ['dashboard', 'library', 'details', 'journal'];
+var VALID_SECTIONS = ['dashboard', 'library', 'details', 'journal', 'insights'];
 
 /**
  * Shows the requested section and hides all others.
@@ -1293,7 +1481,7 @@ function syncFromHash() {
     return;
   }
 
-  var targetSection = (hash === 'dashboard' || hash === 'library' || hash === 'journal') ? hash : 'dashboard';
+  var targetSection = (hash === 'dashboard' || hash === 'library' || hash === 'journal' || hash === 'insights') ? hash : 'dashboard';
   if (targetSection !== hash) {
     navigateTo('dashboard', true);
     return;
@@ -1584,14 +1772,24 @@ document.getElementById('anime-form').addEventListener('submit', function(e) {
     // EDIT — update existing entry
     var anime = findAnimeById(id);
     if (anime) {
+      var prevWatched = anime.watchedEps || 0;
+      var prevStatus  = anime.status;
       anime.title         = title;
       anime.posterUrl     = poster;
       anime.totalEps      = totalEps;
       anime.watchedEps    = watched;
       anime.status        = status;
       anime.genre         = genre;
+      anime.updatedAt     = Date.now();
       // User manually chose the status — clear any auto-complete flag
       anime.autoCompleted = false;
+
+      if (watched > prevWatched) {
+        recordWatchActivity(anime, prevWatched, watched);
+      }
+      if (prevStatus !== 'completed' && status === 'completed') {
+        recordCompletionEvent(anime);
+      }
     }
   } else {
     // ADD — create new manual entry
@@ -2040,13 +2238,21 @@ function incrementEpisode(animeId) {
   if (!anime) return;
   if (anime.totalEps !== null && anime.watchedEps >= anime.totalEps) return; // already at max
 
-  anime.watchedEps += 1;
+  var prevEp = anime.watchedEps || 0;
+  var prevStatus = anime.status;
+  anime.watchedEps = prevEp + 1;
+  anime.updatedAt = Date.now();
+
+  recordWatchActivity(anime, prevEp, anime.watchedEps);
 
   // Auto-complete only if total is known and anime is not ongoing.
   // Mark autoCompleted so decrementEpisode can distinguish this from a manual status choice.
   if (anime.totalEps !== null && anime.watchedEps === anime.totalEps && anime.airingStatus !== 'RELEASING') {
     anime.status        = 'completed';
     anime.autoCompleted = true;
+    if (prevStatus !== 'completed') {
+      recordCompletionEvent(anime);
+    }
   }
 
   stateCommit();
@@ -2612,7 +2818,7 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
   var cover  = (media.coverImage && (media.coverImage.large || media.coverImage.medium)) || '';
   var genres = Array.isArray(media.genres) ? media.genres.slice(0, 3).join(', ') : '';
 
-  state.library.push({
+  var newAnime = {
     id:            generateId(),
     anilistId:     media.id,
     title:         getMediaTitle(media),
@@ -2631,7 +2837,11 @@ document.getElementById('search-add-form').addEventListener('submit', function(e
     updatedAt:     now,
     autoCompleted: false,
     quotes:        []
-  });
+  };
+  state.library.push(newAnime);
+  if (status === 'completed') {
+    recordCompletionEvent(newAnime);
+  }
 
   closeSearchModal();
   stateCommit();

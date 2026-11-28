@@ -33,6 +33,7 @@
         <a href="#library"    class="nav-link"         data-section="library">My Library</a>
         <a href="#details"    class="nav-link"         data-section="details">Anime Details</a>
         <a href="#journal"    class="nav-link"         data-section="journal">My Journal</a>
+        <a href="#insights"   class="nav-link"         data-section="insights">Insights</a>
       </nav>
       <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="main-nav">
         <span></span><span></span><span></span>
@@ -292,6 +293,7 @@
           <div class="quick-nav">
             <button class="btn-primary btn-block" data-nav="library">Browse Library</button>
             <button class="btn-secondary btn-block" data-nav="journal">Open Journal</button>
+            <button class="btn-secondary btn-block" data-nav="insights">Watch Insights</button>
           </div>
         </div>
       </div>
@@ -387,6 +389,27 @@
         </aside>
         <div class="journal-feed" id="journal-feed"></div>
       </div>
+
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         SECTION 5 · WATCH ACTIVITY & INSIGHTS
+    ───────────────────────────────────────── -->
+    <section class="app-section" id="insights">
+
+      <div class="section-header">
+        <div>
+          <p class="section-label">// ARCHIVE ANALYTICS</p>
+          <h2 class="section-title">Watch Activity &amp; Insights</h2>
+        </div>
+        <div class="status-tabs insights-subtabs" id="insights-tabs" role="tablist" aria-label="Insights views">
+          <button type="button" class="tab-btn active" data-insights-tab="timeline" role="tab" aria-selected="true">Timeline</button>
+          <button type="button" class="tab-btn" data-insights-tab="overview" role="tab" aria-selected="false">Overview &amp; Stats</button>
+          <button type="button" class="tab-btn" data-insights-tab="recap" role="tab" aria-selected="false">Year in Review</button>
+        </div>
+      </div>
+
+      <div id="insights-content"></div>
 
     </section>
 
